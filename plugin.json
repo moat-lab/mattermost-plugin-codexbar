@@ -1,0 +1,24 @@
+{
+    "id": "codexbar",
+    "name": "CodexBar",
+    "description": "Private Mattermost bot cards for CodexBar CLI usage and local cost data. Calls codexbar over a remote rexecd gRPC endpoint.",
+    "homepage_url": "https://github.com/moat-lab/mattermost-plugin-codexbar",
+    "support_url": "https://github.com/moat-lab/mattermost-plugin-codexbar/issues",
+    "icon_path": "",
+    "version": "0.1.0",
+    "min_server_version": "9.11.0",
+    "server": {
+        "executables": {
+            "linux-amd64": "server/dist/plugin-linux-amd64",
+            "linux-arm64": "server/dist/plugin-linux-arm64",
+            "darwin-amd64": "server/dist/plugin-darwin-amd64",
+            "darwin-arm64": "server/dist/plugin-darwin-arm64",
+            "windows-amd64": "server/dist/plugin-windows-amd64.exe"
+        }
+    },
+    "settings_schema": {
+        "header": "CodexBar bot for private usage/cost cards. Deployment coordinates are supplied by CODEXBAR_REXECD_ADDR and CODEXBAR_BIN on the Mattermost server process.",
+        "footer": "See https://github.com/moat-lab/mattermost-plugin-codexbar for setup details.",
+        "settings": []
+    }
+}

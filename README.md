@@ -46,10 +46,6 @@ COPYFILE_DISABLE=1 make dist
 
 `COPYFILE_DISABLE=1` is required on macOS so the plugin tarball does not contain `._*` AppleDouble files that break `mmctl --local plugin add`.
 
-When exercising Mattermost slash commands through `/api/v4/commands/execute`,
-include `team_id` even for the bot DM channel. Without it, Mattermost can return
-`403 api.context.permissions.app_error` before the plugin sees the DM command.
-
 The bundle is written to:
 
 ```text

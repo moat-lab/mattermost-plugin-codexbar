@@ -28,6 +28,7 @@ type Plugin struct {
 	rexec       *rexec.Client
 	rexecAddr   string
 	codexbarBin string
+	codexbarCwd string
 	botUserID   string
 	config      configuration
 }
@@ -72,6 +73,7 @@ func (p *Plugin) OnActivate() error {
 	p.rexec = rc
 	p.rexecAddr = addr
 	p.codexbarBin = resolveCodexbarBin()
+	p.codexbarCwd = resolveCodexbarCwd()
 	p.botUserID = botID
 	p.mu.Unlock()
 
@@ -83,6 +85,7 @@ func (p *Plugin) OnActivate() error {
 		"bot_user_id", botID,
 		"rexecd_addr", addr,
 		"codexbar_bin", p.getCodexbarBin(),
+		"codexbar_cwd", p.getCodexbarCwd(),
 	)
 	return nil
 }
@@ -131,4 +134,10 @@ func (p *Plugin) getCodexbarBin() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.codexbarBin
+}
+
+func (p *Plugin) getCodexbarCwd() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.codexbarCwd
 }

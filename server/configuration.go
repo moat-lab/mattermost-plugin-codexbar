@@ -10,6 +10,7 @@ import (
 const (
 	rexecdAddrEnv      = "CODEXBAR_REXECD_ADDR"
 	codexbarBinEnv     = "CODEXBAR_BIN"
+	codexbarCwdEnv     = "CODEXBAR_CWD"
 	defaultCodexbarBin = "codexbar"
 )
 
@@ -29,6 +30,10 @@ func resolveCodexbarBin() string {
 		return defaultCodexbarBin
 	}
 	return raw
+}
+
+func resolveCodexbarCwd() string {
+	return strings.TrimSpace(os.Getenv(codexbarCwdEnv))
 }
 
 func (p *Plugin) loadPluginConfiguration() (configuration, error) {

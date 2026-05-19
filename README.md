@@ -32,7 +32,8 @@ Set these environment variables on the Mattermost server process:
 | Variable | Required | Meaning |
 |---|---:|---|
 | `CODEXBAR_REXECD_ADDR` | yes | gRPC address for the Mac-side rexecd daemon. |
-| `CODEXBAR_BIN` | no | Binary path executed by rexecd. Defaults to `codexbar`; vctcn should use `/opt/homebrew/bin/codexbar`. |
+| `CODEXBAR_BIN` | no | Binary path executed by rexecd. Defaults to `codexbar`; vctcn should use `/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI`. |
+| `CODEXBAR_CWD` | no | Working directory passed to rexecd. vctcn should use `/Applications/CodexBar.app/Contents/Helpers` so the Swift CLI resolves its app bundle correctly. |
 
 The plugin has no Mattermost System Console settings. Deployment coordinates stay in the runtime environment/IaC.
 

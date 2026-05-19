@@ -121,20 +121,15 @@ func renderOutputs(mode commandMode, outputs []codexbarOutput) []*model.SlackAtt
 			continue
 		}
 		if out.Result.ExitCode != 0 {
+			if len(out.Result.Stdout) > 0 {
+				attachments = append(attachments, renderStdoutByLabel(reqModeTitle(mode), out.Label, out.Result.Stdout)...)
+				continue
+			}
 			attachments = append(attachments, renderExitError(out))
 			continue
 		}
 
-		switch out.Label {
-		case "cost":
-			attachments = append(attachments, renderCostStdout(out.Result.Stdout)...)
-		case "usage":
-			attachments = append(attachments, renderUsageStdout(out.Result.Stdout)...)
-		case "config":
-			attachments = append(attachments, renderConfigStdout(out.Result.Stdout))
-		default:
-			attachments = append(attachments, renderGenericJSON("CodexBar "+string(mode), out.Result.Stdout))
-		}
+		attachments = append(attachments, renderStdoutByLabel(reqModeTitle(mode), out.Label, out.Result.Stdout)...)
 	}
 	if len(attachments) == 0 {
 		attachments = append(attachments, &model.SlackAttachment{
@@ -144,6 +139,23 @@ func renderOutputs(mode commandMode, outputs []codexbarOutput) []*model.SlackAtt
 		})
 	}
 	return attachments
+}
+
+func reqModeTitle(mode commandMode) string {
+	return "CodexBar " + string(mode)
+}
+
+func renderStdoutByLabel(title, label string, stdout []byte) []*model.SlackAttachment {
+	switch label {
+	case "cost":
+		return renderCostStdout(stdout)
+	case "usage":
+		return renderUsageStdout(stdout)
+	case "config":
+		return []*model.SlackAttachment{renderConfigStdout(stdout)}
+	default:
+		return []*model.SlackAttachment{renderGenericJSON(title, stdout)}
+	}
 }
 
 func renderCostStdout(stdout []byte) []*model.SlackAttachment {

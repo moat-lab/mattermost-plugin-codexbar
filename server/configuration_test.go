@@ -14,6 +14,18 @@ func TestResolveCodexbarBin(t *testing.T) {
 	}
 }
 
+func TestResolveCodexbarCwd(t *testing.T) {
+	t.Setenv(codexbarCwdEnv, "")
+	if got := resolveCodexbarCwd(); got != "" {
+		t.Fatalf("resolveCodexbarCwd default = %q, want empty", got)
+	}
+
+	t.Setenv(codexbarCwdEnv, " /Applications/CodexBar.app/Contents/Helpers \n")
+	if got := resolveCodexbarCwd(); got != "/Applications/CodexBar.app/Contents/Helpers" {
+		t.Fatalf("resolveCodexbarCwd env = %q", got)
+	}
+}
+
 func TestResolveRexecdAddr(t *testing.T) {
 	t.Setenv(rexecdAddrEnv, "")
 	if _, err := resolveRexecdAddr(); err == nil {

@@ -54,6 +54,7 @@ type codexbarRequest struct {
 type codexbarInvocation struct {
 	Label   string
 	Argv    []string
+	Cwd     string
 	Timeout time.Duration
 }
 
@@ -101,6 +102,7 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 	rc := p.getRexec()
 	botID := p.getBotUserID()
 	bin := p.getCodexbarBin()
+	cwd := p.getCodexbarCwd()
 	if client == nil || rc == nil || botID == "" || bin == "" {
 		return ephemeral("CodexBar plugin is not fully activated"), nil
 	}
@@ -113,7 +115,7 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 		return ephemeral("CodexBar only responds in its bot direct message. Open a DM with CodexBar and run `/codexbar` there."), nil
 	}
 
-	req, err := buildCodexbarRequest(args.Command, bin)
+	req, err := buildCodexbarRequest(args.Command, bin, cwd)
 	if err != nil {
 		return ephemeral(err.Error()), nil
 	}
@@ -129,7 +131,7 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 	outputs := make([]codexbarOutput, 0, len(req.Invocations))
 	for _, inv := range req.Invocations {
 		ctx, cancel := context.WithTimeout(context.Background(), inv.Timeout)
-		res, runErr := rc.Run(ctx, inv.Argv, rexec.WithTimeout(inv.Timeout))
+		res, runErr := rc.Run(ctx, inv.Argv, rexec.WithTimeout(inv.Timeout), rexec.WithCwd(inv.Cwd))
 		cancel()
 		outputs = append(outputs, codexbarOutput{
 			Label:  inv.Label,
@@ -175,7 +177,7 @@ func isCodexbarBotDM(channel *model.Channel, botID string) bool {
 	return model.IsBotDMChannel(channel, botID)
 }
 
-func buildCodexbarRequest(raw, bin string) (codexbarRequest, error) {
+func buildCodexbarRequest(raw, bin, cwd string) (codexbarRequest, error) {
 	fields := strings.Fields(strings.TrimSpace(raw))
 	if len(fields) == 0 {
 		return codexbarRequest{}, errors.New("empty command")
@@ -197,11 +199,13 @@ func buildCodexbarRequest(raw, bin string) (codexbarRequest, error) {
 				{
 					Label:   "usage",
 					Argv:    []string{bin, "usage", "--format", "json", "--status", "--provider", "all"},
+					Cwd:     cwd,
 					Timeout: usageTimeout,
 				},
 				{
 					Label:   "cost",
 					Argv:    []string{bin, "cost", "--format", "json", "--provider", "all"},
+					Cwd:     cwd,
 					Timeout: costTimeout,
 				},
 			},
@@ -213,7 +217,7 @@ func buildCodexbarRequest(raw, bin string) (codexbarRequest, error) {
 		}
 		return codexbarRequest{
 			Mode:        modeCost,
-			Invocations: []codexbarInvocation{{Label: "cost", Argv: argv, Timeout: costTimeout}},
+			Invocations: []codexbarInvocation{{Label: "cost", Argv: argv, Cwd: cwd, Timeout: costTimeout}},
 		}, nil
 	case "usage", "u", "status":
 		argv, err := buildUsageArgv(bin, args[1:])
@@ -222,7 +226,7 @@ func buildCodexbarRequest(raw, bin string) (codexbarRequest, error) {
 		}
 		return codexbarRequest{
 			Mode:        modeUsage,
-			Invocations: []codexbarInvocation{{Label: "usage", Argv: argv, Timeout: usageTimeout}},
+			Invocations: []codexbarInvocation{{Label: "usage", Argv: argv, Cwd: cwd, Timeout: usageTimeout}},
 		}, nil
 	case "config", "health":
 		if len(args) > 1 {
@@ -233,6 +237,7 @@ func buildCodexbarRequest(raw, bin string) (codexbarRequest, error) {
 			Invocations: []codexbarInvocation{{
 				Label:   "config",
 				Argv:    []string{bin, "config", "validate", "--format", "json"},
+				Cwd:     cwd,
 				Timeout: configTimeout,
 			}},
 		}, nil

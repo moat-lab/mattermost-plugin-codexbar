@@ -148,6 +148,37 @@ func TestRenderOutputsExitError(t *testing.T) {
 	}
 }
 
+func TestRenderOutputsUsesStructuredStdoutOnNonZeroExit(t *testing.T) {
+	stdout := []byte(`[
+	  {
+	    "provider": "codex",
+	    "source": "cli",
+	    "error": {
+	      "kind": "provider",
+	      "code": "1",
+	      "message": "Codex RPC timed out waiting for initialize reply."
+	    }
+	  }
+	]`)
+
+	attachments := renderOutputs(modeUsage, []codexbarOutput{{
+		Label:  "usage",
+		Result: &rexec.Result{ExitCode: 1, Stdout: stdout},
+	}})
+	if len(attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(attachments))
+	}
+	if attachments[0].Title != "CodexBar usage - Codex" {
+		t.Fatalf("title = %q", attachments[0].Title)
+	}
+	if attachments[0].Color != colorError {
+		t.Fatalf("color = %q, want error", attachments[0].Color)
+	}
+	if !strings.Contains(attachments[0].Text, "Codex RPC timed out") {
+		t.Fatalf("text = %q", attachments[0].Text)
+	}
+}
+
 func fieldContains(fields []*model.SlackAttachmentField, title, want string) bool {
 	for _, field := range fields {
 		if field.Title == title && strings.Contains(field.Value.(string), want) {

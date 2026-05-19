@@ -8,7 +8,7 @@ import (
 )
 
 func TestBuildCodexbarRequestSummary(t *testing.T) {
-	req, err := buildCodexbarRequest("/codexbar", "/opt/homebrew/bin/codexbar")
+	req, err := buildCodexbarRequest("/codexbar", "/opt/homebrew/bin/codexbar", "/Applications/CodexBar.app/Contents/Helpers")
 	if err != nil {
 		t.Fatalf("buildCodexbarRequest: %v", err)
 	}
@@ -22,6 +22,9 @@ func TestBuildCodexbarRequestSummary(t *testing.T) {
 	if !reflect.DeepEqual(req.Invocations[0].Argv, wantUsage) {
 		t.Fatalf("usage argv = %#v, want %#v", req.Invocations[0].Argv, wantUsage)
 	}
+	if req.Invocations[0].Cwd != "/Applications/CodexBar.app/Contents/Helpers" {
+		t.Fatalf("usage cwd = %q", req.Invocations[0].Cwd)
+	}
 	wantCost := []string{"/opt/homebrew/bin/codexbar", "cost", "--format", "json", "--provider", "all"}
 	if !reflect.DeepEqual(req.Invocations[1].Argv, wantCost) {
 		t.Fatalf("cost argv = %#v, want %#v", req.Invocations[1].Argv, wantCost)
@@ -29,7 +32,7 @@ func TestBuildCodexbarRequestSummary(t *testing.T) {
 }
 
 func TestBuildCodexbarRequestUsageSource(t *testing.T) {
-	req, err := buildCodexbarRequest("/codexbar usage --provider claude --source cli", "codexbar")
+	req, err := buildCodexbarRequest("/codexbar usage --provider claude --source cli", "codexbar", "")
 	if err != nil {
 		t.Fatalf("buildCodexbarRequest: %v", err)
 	}
@@ -40,7 +43,7 @@ func TestBuildCodexbarRequestUsageSource(t *testing.T) {
 }
 
 func TestBuildCodexbarRequestCostRefresh(t *testing.T) {
-	req, err := buildCodexbarRequest("/codexbar cost --provider=codex --refresh", "codexbar")
+	req, err := buildCodexbarRequest("/codexbar cost --provider=codex --refresh", "codexbar", "")
 	if err != nil {
 		t.Fatalf("buildCodexbarRequest: %v", err)
 	}
@@ -51,7 +54,7 @@ func TestBuildCodexbarRequestCostRefresh(t *testing.T) {
 }
 
 func TestBuildCodexbarRequestRejectsPassthrough(t *testing.T) {
-	_, err := buildCodexbarRequest("/codexbar cache clear", "codexbar")
+	_, err := buildCodexbarRequest("/codexbar cache clear", "codexbar", "")
 	if err == nil {
 		t.Fatal("expected unsupported command error")
 	}

@@ -322,7 +322,7 @@ func allUsageInvocations(bin, cwd string) []codexbarInvocation {
 	return usageInvocationsFor(bin, cwd, []usageProviderSource{
 		{provider: "codex", source: "web"},
 		{provider: "claude", source: "web"},
-		{provider: "gemini", source: "oauth"},
+		{provider: "gemini", source: "api"},
 	})
 }
 

@@ -104,9 +104,9 @@ type creditsInfo struct {
 }
 
 type providerError struct {
-	Kind    string `json:"kind"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Kind    string          `json:"kind"`
+	Code    json.RawMessage `json:"code"`
+	Message string          `json:"message"`
 }
 
 func renderOutputs(mode commandMode, outputs []codexbarOutput) []*model.SlackAttachment {
@@ -345,8 +345,8 @@ func renderProviderError(title, provider, source string, err *providerError) *mo
 	if err.Kind != "" {
 		fields = append(fields, shortField("Kind", err.Kind))
 	}
-	if err.Code != "" {
-		fields = append(fields, shortField("Code", err.Code))
+	if code := rawJSONScalarText(err.Code); code != "" {
+		fields = append(fields, shortField("Code", code))
 	}
 	msg := firstNonEmpty(err.Message, "CodexBar returned an error for this provider.")
 	return &model.SlackAttachment{
@@ -356,6 +356,21 @@ func renderProviderError(title, provider, source string, err *providerError) *mo
 		Fields: fields,
 		Footer: "codexbar usage --format json --status",
 	}
+}
+
+func rawJSONScalarText(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var n float64
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return trimFloat(n)
+	}
+	return strings.TrimSpace(string(raw))
 }
 
 func renderJSONError(title string, err error, stdout []byte) *model.SlackAttachment {

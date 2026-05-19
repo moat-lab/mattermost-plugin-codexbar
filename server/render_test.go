@@ -122,6 +122,32 @@ func TestRenderUsageProviderError(t *testing.T) {
 	}
 }
 
+func TestRenderUsageProviderErrorNumericCode(t *testing.T) {
+	stdout := []byte(`[
+	  {
+	    "provider": "gemini",
+	    "source": "oauth",
+	    "error": {
+	      "kind": "provider",
+	      "code": 1,
+	      "message": "Source is not supported."
+	    }
+	  }
+	]`)
+
+	attachments := renderUsageStdout(stdout)
+	if len(attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(attachments))
+	}
+	att := attachments[0]
+	if att.Color != colorError {
+		t.Fatalf("color = %q, want error", att.Color)
+	}
+	if !fieldContains(att.Fields, "Code", "1") {
+		t.Fatalf("numeric code field missing: %#v", att.Fields)
+	}
+}
+
 func TestRenderConfigStdout(t *testing.T) {
 	att := renderConfigStdout([]byte(`[]`))
 	if att.Color != colorGood {

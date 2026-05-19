@@ -57,7 +57,7 @@ func TestBuildCodexbarRequestUsageAllSplitsProviders(t *testing.T) {
 	want := [][]string{
 		{"codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "web", "--web-timeout", usageWebTimeoutSeconds},
 		{"codexbar", "usage", "--format", "json", "--status", "--provider", "claude", "--source", "web", "--web-timeout", usageWebTimeoutSeconds},
-		{"codexbar", "usage", "--format", "json", "--status", "--provider", "gemini", "--source", "oauth"},
+		{"codexbar", "usage", "--format", "json", "--status", "--provider", "gemini", "--source", "api"},
 	}
 	for i := range want {
 		if !reflect.DeepEqual(req.Invocations[i].Argv, want[i]) {

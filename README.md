@@ -16,9 +16,9 @@ All commands are bot-DM only. Calls from public, private, or group channels retu
 
 | Command | CLI data source | Mattermost behavior |
 |---|---|---|
-| `/codexbar` | `codexbar usage --format json --status --provider all` plus `codexbar cost --format json --provider all` | Shows live limit/status cards and local cost cards. |
+| `/codexbar` | Fast Codex/Claude web usage probes plus `codexbar cost --format json --provider all` | Shows a low-latency live summary and local cost cards. |
 | `/codexbar summary` | Same as `/codexbar` | Explicit summary alias. |
-| `/codexbar usage [codex\|claude\|gemini\|all] [--source=auto\|web\|cli\|oauth\|api]` | `codexbar usage --format json --status` | Shows provider account, plan, rate windows, reset text, service status, and provider errors. |
+| `/codexbar usage [codex\|claude\|gemini\|all] [--source=auto\|web\|cli\|oauth\|api]` | `codexbar usage --format json --status`; provider `all` is split into bounded per-provider probes | Shows provider account, plan, rate windows, reset text, service status, and provider errors. |
 | `/codexbar cost [codex\|claude\|gemini\|all] [--refresh]` | `codexbar cost --format json` | Shows local last-30-day and current-session token/cost cards. |
 | `/codexbar config` | `codexbar config validate --format json` | Shows config validation health. |
 | `/codexbar help` | local plugin help | Shows the curated Mattermost command surface. |

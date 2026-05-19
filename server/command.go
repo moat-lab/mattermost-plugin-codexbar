@@ -17,6 +17,8 @@ const (
 	costTimeout   = 45 * time.Second
 	usageTimeout  = 75 * time.Second
 	configTimeout = 15 * time.Second
+
+	usageWebTimeoutSeconds = "20"
 )
 
 var (
@@ -188,22 +190,15 @@ func buildCodexbarRequest(raw, bin, cwd string) (codexbarRequest, error) {
 		if len(args) > 1 {
 			return codexbarRequest{}, fmt.Errorf("summary does not accept extra arguments: %s", strings.Join(args[1:], " "))
 		}
+		invocations := append(summaryUsageInvocations(bin, cwd), codexbarInvocation{
+			Label:   "cost",
+			Argv:    []string{bin, "cost", "--format", "json", "--provider", "all"},
+			Cwd:     cwd,
+			Timeout: costTimeout,
+		})
 		return codexbarRequest{
-			Mode: modeSummary,
-			Invocations: []codexbarInvocation{
-				{
-					Label:   "usage",
-					Argv:    []string{bin, "usage", "--format", "json", "--status", "--provider", "all"},
-					Cwd:     cwd,
-					Timeout: usageTimeout,
-				},
-				{
-					Label:   "cost",
-					Argv:    []string{bin, "cost", "--format", "json", "--provider", "all"},
-					Cwd:     cwd,
-					Timeout: costTimeout,
-				},
-			},
+			Mode:        modeSummary,
+			Invocations: invocations,
 		}, nil
 	case "cost", "c":
 		argv, err := buildCostArgv(bin, args[1:])
@@ -215,13 +210,13 @@ func buildCodexbarRequest(raw, bin, cwd string) (codexbarRequest, error) {
 			Invocations: []codexbarInvocation{{Label: "cost", Argv: argv, Cwd: cwd, Timeout: costTimeout}},
 		}, nil
 	case "usage", "u", "status":
-		argv, err := buildUsageArgv(bin, args[1:])
+		invocations, err := buildUsageInvocations(bin, cwd, args[1:])
 		if err != nil {
 			return codexbarRequest{}, err
 		}
 		return codexbarRequest{
 			Mode:        modeUsage,
-			Invocations: []codexbarInvocation{{Label: "usage", Argv: argv, Cwd: cwd, Timeout: usageTimeout}},
+			Invocations: invocations,
 		}, nil
 	case "config", "health":
 		if len(args) > 1 {
@@ -295,7 +290,61 @@ func buildCostArgv(bin string, args []string) ([]string, error) {
 	return argv, nil
 }
 
-func buildUsageArgv(bin string, args []string) ([]string, error) {
+type usageOptions struct {
+	provider string
+	source   string
+}
+
+func buildUsageInvocations(bin, cwd string, args []string) ([]codexbarInvocation, error) {
+	opts, err := parseUsageOptions(args)
+	if err != nil {
+		return nil, err
+	}
+	if opts.provider == "all" && opts.source == "" {
+		return allUsageInvocations(bin, cwd), nil
+	}
+	return []codexbarInvocation{{
+		Label:   "usage",
+		Argv:    buildUsageArgv(bin, opts.provider, opts.source),
+		Cwd:     cwd,
+		Timeout: usageTimeout,
+	}}, nil
+}
+
+func summaryUsageInvocations(bin, cwd string) []codexbarInvocation {
+	return usageInvocationsFor(bin, cwd, []usageProviderSource{
+		{provider: "codex", source: "web"},
+		{provider: "claude", source: "web"},
+	})
+}
+
+func allUsageInvocations(bin, cwd string) []codexbarInvocation {
+	return usageInvocationsFor(bin, cwd, []usageProviderSource{
+		{provider: "codex", source: "web"},
+		{provider: "claude", source: "web"},
+		{provider: "gemini", source: "oauth"},
+	})
+}
+
+type usageProviderSource struct {
+	provider string
+	source   string
+}
+
+func usageInvocationsFor(bin, cwd string, specs []usageProviderSource) []codexbarInvocation {
+	invocations := make([]codexbarInvocation, 0, len(specs))
+	for _, spec := range specs {
+		invocations = append(invocations, codexbarInvocation{
+			Label:   "usage",
+			Argv:    buildUsageArgv(bin, spec.provider, spec.source),
+			Cwd:     cwd,
+			Timeout: usageTimeout,
+		})
+	}
+	return invocations
+}
+
+func parseUsageOptions(args []string) (usageOptions, error) {
 	provider := "all"
 	source := ""
 	for i := 0; i < len(args); i++ {
@@ -303,50 +352,57 @@ func buildUsageArgv(bin string, args []string) ([]string, error) {
 		switch {
 		case arg == "--provider":
 			if i+1 >= len(args) {
-				return nil, errors.New("--provider requires codex|claude|gemini|all")
+				return usageOptions{}, errors.New("--provider requires codex|claude|gemini|all")
 			}
 			i++
 			value := args[i]
 			if err := validateProvider(value); err != nil {
-				return nil, err
+				return usageOptions{}, err
 			}
 			provider = value
 		case strings.HasPrefix(arg, "--provider="):
 			value := strings.TrimPrefix(arg, "--provider=")
 			if err := validateProvider(value); err != nil {
-				return nil, err
+				return usageOptions{}, err
 			}
 			provider = value
 		case arg == "--source":
 			if i+1 >= len(args) {
-				return nil, errors.New("--source requires auto|web|cli|oauth|api")
+				return usageOptions{}, errors.New("--source requires auto|web|cli|oauth|api")
 			}
 			i++
 			value := args[i]
 			if !allowedUsageSources[value] {
-				return nil, fmt.Errorf("unsupported usage source %q; use auto|web|cli|oauth|api", value)
+				return usageOptions{}, fmt.Errorf("unsupported usage source %q; use auto|web|cli|oauth|api", value)
 			}
 			source = value
 		case strings.HasPrefix(arg, "--source="):
 			value := strings.TrimPrefix(arg, "--source=")
 			if !allowedUsageSources[value] {
-				return nil, fmt.Errorf("unsupported usage source %q; use auto|web|cli|oauth|api", value)
+				return usageOptions{}, fmt.Errorf("unsupported usage source %q; use auto|web|cli|oauth|api", value)
 			}
 			source = value
 		case safeTokenPattern.MatchString(arg):
 			if err := validateProvider(arg); err != nil {
-				return nil, err
+				return usageOptions{}, err
 			}
 			provider = arg
 		default:
-			return nil, fmt.Errorf("unsupported usage argument %q; use provider codex|claude|gemini|all and optional --source=<source>", arg)
+			return usageOptions{}, fmt.Errorf("unsupported usage argument %q; use provider codex|claude|gemini|all and optional --source=<source>", arg)
 		}
 	}
+	return usageOptions{provider: provider, source: source}, nil
+}
+
+func buildUsageArgv(bin, provider, source string) []string {
 	argv := []string{bin, "usage", "--format", "json", "--status", "--provider", provider}
 	if source != "" {
 		argv = append(argv, "--source", source)
 	}
-	return argv, nil
+	if source == "web" {
+		argv = append(argv, "--web-timeout", usageWebTimeoutSeconds)
+	}
+	return argv
 }
 
 func validateProvider(value string) error {

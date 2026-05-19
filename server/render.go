@@ -301,7 +301,7 @@ func renderHelp() []*model.SlackAttachment {
 		Title: "CodexBar commands",
 		Text: strings.Join([]string{
 			"`/codexbar` or `/codexbar summary` - usage limits plus local cost cards.",
-			"`/codexbar usage [codex|claude|gemini|all] [--source=auto|web|cli|oauth|api]` - live usage/status cards.",
+			"`/codexbar usage [codex|claude|gemini|all] [--source=auto|web|cli|oauth|api]` - live usage/status cards; `all` runs bounded provider probes.",
 			"`/codexbar cost [codex|claude|gemini|all] [--refresh]` - local token-cost cards.",
 			"`/codexbar config` - validate CodexBar config.",
 		}, "\n"),

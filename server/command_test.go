@@ -15,19 +15,23 @@ func TestBuildCodexbarRequestSummary(t *testing.T) {
 	if req.Mode != modeSummary {
 		t.Fatalf("mode = %s, want %s", req.Mode, modeSummary)
 	}
-	if len(req.Invocations) != 2 {
-		t.Fatalf("invocations = %d, want 2", len(req.Invocations))
+	if len(req.Invocations) != 3 {
+		t.Fatalf("invocations = %d, want 3", len(req.Invocations))
 	}
-	wantUsage := []string{"/opt/homebrew/bin/codexbar", "usage", "--format", "json", "--status", "--provider", "all"}
+	wantUsage := []string{"/opt/homebrew/bin/codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "web", "--web-timeout", usageWebTimeoutSeconds}
 	if !reflect.DeepEqual(req.Invocations[0].Argv, wantUsage) {
 		t.Fatalf("usage argv = %#v, want %#v", req.Invocations[0].Argv, wantUsage)
 	}
 	if req.Invocations[0].Cwd != "/Applications/CodexBar.app/Contents/Helpers" {
 		t.Fatalf("usage cwd = %q", req.Invocations[0].Cwd)
 	}
+	wantClaudeUsage := []string{"/opt/homebrew/bin/codexbar", "usage", "--format", "json", "--status", "--provider", "claude", "--source", "web", "--web-timeout", usageWebTimeoutSeconds}
+	if !reflect.DeepEqual(req.Invocations[1].Argv, wantClaudeUsage) {
+		t.Fatalf("claude usage argv = %#v, want %#v", req.Invocations[1].Argv, wantClaudeUsage)
+	}
 	wantCost := []string{"/opt/homebrew/bin/codexbar", "cost", "--format", "json", "--provider", "all"}
-	if !reflect.DeepEqual(req.Invocations[1].Argv, wantCost) {
-		t.Fatalf("cost argv = %#v, want %#v", req.Invocations[1].Argv, wantCost)
+	if !reflect.DeepEqual(req.Invocations[2].Argv, wantCost) {
+		t.Fatalf("cost argv = %#v, want %#v", req.Invocations[2].Argv, wantCost)
 	}
 }
 
@@ -39,6 +43,29 @@ func TestBuildCodexbarRequestUsageSource(t *testing.T) {
 	want := []string{"codexbar", "usage", "--format", "json", "--status", "--provider", "claude", "--source", "cli"}
 	if !reflect.DeepEqual(req.Invocations[0].Argv, want) {
 		t.Fatalf("argv = %#v, want %#v", req.Invocations[0].Argv, want)
+	}
+}
+
+func TestBuildCodexbarRequestUsageAllSplitsProviders(t *testing.T) {
+	req, err := buildCodexbarRequest("/codexbar usage", "codexbar", "/helpers")
+	if err != nil {
+		t.Fatalf("buildCodexbarRequest: %v", err)
+	}
+	if len(req.Invocations) != 3 {
+		t.Fatalf("invocations = %d, want 3", len(req.Invocations))
+	}
+	want := [][]string{
+		{"codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "web", "--web-timeout", usageWebTimeoutSeconds},
+		{"codexbar", "usage", "--format", "json", "--status", "--provider", "claude", "--source", "web", "--web-timeout", usageWebTimeoutSeconds},
+		{"codexbar", "usage", "--format", "json", "--status", "--provider", "gemini", "--source", "oauth"},
+	}
+	for i := range want {
+		if !reflect.DeepEqual(req.Invocations[i].Argv, want[i]) {
+			t.Fatalf("invocation %d argv = %#v, want %#v", i, req.Invocations[i].Argv, want[i])
+		}
+		if req.Invocations[i].Cwd != "/helpers" {
+			t.Fatalf("invocation %d cwd = %q, want /helpers", i, req.Invocations[i].Cwd)
+		}
 	}
 }
 

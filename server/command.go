@@ -178,12 +178,7 @@ func isCodexbarBotDM(channel *model.Channel, botID string) bool {
 }
 
 func buildCodexbarRequest(raw, bin, cwd string) (codexbarRequest, error) {
-	fields := strings.Fields(strings.TrimSpace(raw))
-	if len(fields) == 0 {
-		return codexbarRequest{}, errors.New("empty command")
-	}
-
-	args := fields[1:]
+	args := commandArgs(raw)
 	if len(args) == 0 {
 		args = []string{"summary"}
 	}
@@ -246,6 +241,18 @@ func buildCodexbarRequest(raw, bin, cwd string) (codexbarRequest, error) {
 	default:
 		return codexbarRequest{}, fmt.Errorf("unknown CodexBar command %q; use `/codexbar help`", args[0])
 	}
+}
+
+func commandArgs(raw string) []string {
+	fields := strings.Fields(strings.TrimSpace(raw))
+	if len(fields) == 0 {
+		return nil
+	}
+	trigger := strings.TrimPrefix(fields[0], "/")
+	if trigger == slashTrigger {
+		return fields[1:]
+	}
+	return fields
 }
 
 func buildCostArgv(bin string, args []string) ([]string, error) {

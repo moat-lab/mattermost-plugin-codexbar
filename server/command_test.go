@@ -53,6 +53,33 @@ func TestBuildCodexbarRequestCostRefresh(t *testing.T) {
 	}
 }
 
+func TestBuildCodexbarRequestAcceptsCommandTail(t *testing.T) {
+	req, err := buildCodexbarRequest("cost codex", "codexbar", "")
+	if err != nil {
+		t.Fatalf("buildCodexbarRequest tail: %v", err)
+	}
+	want := []string{"codexbar", "cost", "--format", "json", "--provider", "codex"}
+	if !reflect.DeepEqual(req.Invocations[0].Argv, want) {
+		t.Fatalf("tail argv = %#v, want %#v", req.Invocations[0].Argv, want)
+	}
+
+	req, err = buildCodexbarRequest("config", "codexbar", "")
+	if err != nil {
+		t.Fatalf("buildCodexbarRequest config tail: %v", err)
+	}
+	if req.Mode != modeConfig {
+		t.Fatalf("tail mode = %q, want %q", req.Mode, modeConfig)
+	}
+
+	req, err = buildCodexbarRequest("", "codexbar", "")
+	if err != nil {
+		t.Fatalf("buildCodexbarRequest empty tail: %v", err)
+	}
+	if req.Mode != modeSummary {
+		t.Fatalf("empty mode = %q, want %q", req.Mode, modeSummary)
+	}
+}
+
 func TestBuildCodexbarRequestRejectsPassthrough(t *testing.T) {
 	_, err := buildCodexbarRequest("/codexbar cache clear", "codexbar", "")
 	if err == nil {

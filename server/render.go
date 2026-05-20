@@ -117,7 +117,26 @@ type providerError struct {
 	Message string          `json:"message"`
 }
 
+type summaryCardKind int
+
+const (
+	summaryCardUsage summaryCardKind = iota
+	summaryCardCost
+	summaryCardOther
+)
+
+type summaryCard struct {
+	provider   string
+	kind       summaryCardKind
+	attachment *model.SlackAttachment
+	sequence   int
+}
+
 func renderOutputs(mode commandMode, outputs []codexbarOutput) []*model.SlackAttachment {
+	if mode == modeSummary {
+		return renderSummaryOutputs(outputs)
+	}
+
 	var attachments []*model.SlackAttachment
 	for _, out := range outputs {
 		if out.Err != nil {
@@ -147,6 +166,196 @@ func renderOutputs(mode commandMode, outputs []codexbarOutput) []*model.SlackAtt
 		})
 	}
 	return attachments
+}
+
+func renderSummaryOutputs(outputs []codexbarOutput) []*model.SlackAttachment {
+	var cards []summaryCard
+	for _, out := range outputs {
+		for _, card := range renderSummaryOutput(out) {
+			card.sequence = len(cards)
+			cards = append(cards, card)
+		}
+	}
+	if len(cards) == 0 {
+		return []*model.SlackAttachment{{
+			Title: "CodexBar",
+			Text:  "No output was returned.",
+			Color: colorWarning,
+		}}
+	}
+
+	sort.SliceStable(cards, func(i, j int) bool {
+		if cmp := compareSummaryProviders(cards[i].provider, cards[j].provider); cmp != 0 {
+			return cmp < 0
+		}
+		if cards[i].kind != cards[j].kind {
+			return cards[i].kind < cards[j].kind
+		}
+		return cards[i].sequence < cards[j].sequence
+	})
+
+	attachments := make([]*model.SlackAttachment, 0, len(cards))
+	for _, card := range cards {
+		attachments = append(attachments, card.attachment)
+	}
+	return attachments
+}
+
+func renderSummaryOutput(out codexbarOutput) []summaryCard {
+	if out.Err != nil {
+		return []summaryCard{summaryErrorCard(out, renderInvocationError(out))}
+	}
+	if out.Result == nil {
+		empty := codexbarOutput{Label: out.Label, Err: fmt.Errorf("empty result"), UsageHints: out.UsageHints}
+		return []summaryCard{summaryErrorCard(out, renderInvocationError(empty))}
+	}
+	if out.Result.ExitCode != 0 && len(out.Result.Stdout) == 0 {
+		return []summaryCard{summaryErrorCard(out, renderExitError(out))}
+	}
+
+	return renderSummaryStdoutByLabel(out)
+}
+
+func renderSummaryStdoutByLabel(out codexbarOutput) []summaryCard {
+	stdout := out.Result.Stdout
+	switch out.Label {
+	case "usage":
+		return renderSummaryUsageStdout(stdout, out.UsageHints)
+	case "cost":
+		return renderSummaryCostStdout(stdout)
+	case "config":
+		return []summaryCard{{kind: summaryCardOther, attachment: renderConfigStdout(stdout)}}
+	default:
+		return []summaryCard{{kind: summaryCardOther, attachment: renderGenericJSON(reqModeTitle(modeSummary), stdout)}}
+	}
+}
+
+func renderSummaryUsageStdout(stdout []byte, hints usageRenderHints) []summaryCard {
+	var reports []usageReport
+	if err := json.Unmarshal(stdout, &reports); err != nil {
+		return []summaryCard{{
+			provider:   hints.Provider,
+			kind:       summaryCardUsage,
+			attachment: renderJSONError("CodexBar usage", err, stdout),
+		}}
+	}
+	if len(reports) == 0 {
+		return []summaryCard{{
+			provider: hints.Provider,
+			kind:     summaryCardUsage,
+			attachment: &model.SlackAttachment{
+				Title:  "CodexBar usage",
+				Text:   "No usage providers were returned.",
+				Color:  colorWarning,
+				Footer: dataFooter("usage", ""),
+			},
+		}}
+	}
+
+	cards := make([]summaryCard, 0, len(reports))
+	for _, report := range reports {
+		cards = append(cards, summaryCard{
+			provider:   usageProvider(report.Provider, hints),
+			kind:       summaryCardUsage,
+			attachment: renderUsageReport(report, hints),
+		})
+	}
+	return cards
+}
+
+func renderSummaryCostStdout(stdout []byte) []summaryCard {
+	var reports []costReport
+	if err := json.Unmarshal(stdout, &reports); err != nil {
+		return []summaryCard{{
+			kind:       summaryCardCost,
+			attachment: renderJSONError("CodexBar cost", err, stdout),
+		}}
+	}
+	if len(reports) == 0 {
+		return []summaryCard{{
+			kind: summaryCardCost,
+			attachment: &model.SlackAttachment{
+				Title:  "CodexBar cost",
+				Text:   "No local cost data was returned.",
+				Color:  colorWarning,
+				Footer: dataFooter("cost", ""),
+			},
+		}}
+	}
+
+	cards := make([]summaryCard, 0, len(reports))
+	for _, report := range reports {
+		cards = append(cards, summaryCard{
+			provider:   report.Provider,
+			kind:       summaryCardCost,
+			attachment: renderCostReport(report),
+		})
+	}
+	return cards
+}
+
+func summaryErrorCard(out codexbarOutput, attachment *model.SlackAttachment) summaryCard {
+	card := summaryCard{
+		kind:       summaryKindForLabel(out.Label),
+		attachment: attachment,
+	}
+	if out.Label == "usage" {
+		card.provider = out.UsageHints.Provider
+	}
+	return card
+}
+
+func summaryKindForLabel(label string) summaryCardKind {
+	switch label {
+	case "usage":
+		return summaryCardUsage
+	case "cost":
+		return summaryCardCost
+	default:
+		return summaryCardOther
+	}
+}
+
+func compareSummaryProviders(left, right string) int {
+	left = strings.ToLower(strings.TrimSpace(left))
+	right = strings.ToLower(strings.TrimSpace(right))
+	if left == right {
+		return 0
+	}
+	if left == "" {
+		return 1
+	}
+	if right == "" {
+		return -1
+	}
+
+	leftRank, leftKnown := summaryProviderRank(left)
+	rightRank, rightKnown := summaryProviderRank(right)
+	switch {
+	case leftKnown && rightKnown:
+		return leftRank - rightRank
+	case leftKnown:
+		return -1
+	case rightKnown:
+		return 1
+	case left < right:
+		return -1
+	default:
+		return 1
+	}
+}
+
+func summaryProviderRank(provider string) (int, bool) {
+	switch provider {
+	case "codex":
+		return 0, true
+	case "claude":
+		return 1, true
+	case "gemini":
+		return 2, true
+	default:
+		return 0, false
+	}
 }
 
 func reqModeTitle(mode commandMode) string {

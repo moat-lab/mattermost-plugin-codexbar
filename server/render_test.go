@@ -51,6 +51,7 @@ func TestRenderCostStdout(t *testing.T) {
 	if !fieldContains(att.Fields, "Last 30d", "$3039 / 3.93B tokens") {
 		t.Fatalf("missing last 30d field: %#v", att.Fields)
 	}
+	assertNoInternalCommandFooter(t, att)
 }
 
 func TestRenderUsageStdout(t *testing.T) {
@@ -94,6 +95,7 @@ func TestRenderUsageStdout(t *testing.T) {
 	if !fieldContains(att.Fields, "Plan", "Claude Max") {
 		t.Fatalf("missing plan field: %#v", att.Fields)
 	}
+	assertNoInternalCommandFooter(t, att)
 }
 
 func TestRenderUsageProviderError(t *testing.T) {
@@ -120,6 +122,7 @@ func TestRenderUsageProviderError(t *testing.T) {
 	if !strings.Contains(att.Text, "Codex returned invalid data") {
 		t.Fatalf("error message missing: %q", att.Text)
 	}
+	assertNoInternalCommandFooter(t, att)
 }
 
 func TestRenderUsageProviderErrorNumericCode(t *testing.T) {
@@ -146,6 +149,7 @@ func TestRenderUsageProviderErrorNumericCode(t *testing.T) {
 	if !fieldContains(att.Fields, "Code", "1") {
 		t.Fatalf("numeric code field missing: %#v", att.Fields)
 	}
+	assertNoInternalCommandFooter(t, att)
 }
 
 func TestRenderConfigStdout(t *testing.T) {
@@ -155,6 +159,22 @@ func TestRenderConfigStdout(t *testing.T) {
 	}
 	if !strings.Contains(att.Text, "validates cleanly") {
 		t.Fatalf("text = %q", att.Text)
+	}
+	assertNoInternalCommandFooter(t, att)
+}
+
+func TestRenderEmptyCardsDoNotExposeInternalCommandFooters(t *testing.T) {
+	for name, attachments := range map[string][]*model.SlackAttachment{
+		"cost":   renderCostStdout([]byte(`[]`)),
+		"usage":  renderUsageStdout([]byte(`[]`)),
+		"config": {renderConfigStdout([]byte(`[{"path":"CODEXBAR_BIN","message":"missing"}]`))},
+	} {
+		if len(attachments) == 0 {
+			t.Fatalf("%s attachments empty", name)
+		}
+		for _, att := range attachments {
+			assertNoInternalCommandFooter(t, att)
+		}
 	}
 }
 
@@ -172,6 +192,7 @@ func TestRenderOutputsExitError(t *testing.T) {
 	if !strings.Contains(attachments[0].Text, "bad args") {
 		t.Fatalf("text = %q", attachments[0].Text)
 	}
+	assertNoInternalCommandFooter(t, attachments[0])
 }
 
 func TestRenderOutputsUsesStructuredStdoutOnNonZeroExit(t *testing.T) {
@@ -203,6 +224,7 @@ func TestRenderOutputsUsesStructuredStdoutOnNonZeroExit(t *testing.T) {
 	if !strings.Contains(attachments[0].Text, "Codex RPC timed out") {
 		t.Fatalf("text = %q", attachments[0].Text)
 	}
+	assertNoInternalCommandFooter(t, attachments[0])
 }
 
 func fieldContains(fields []*model.SlackAttachmentField, title, want string) bool {
@@ -212,4 +234,20 @@ func fieldContains(fields []*model.SlackAttachmentField, title, want string) boo
 		}
 	}
 	return false
+}
+
+func assertNoInternalCommandFooter(t *testing.T, att *model.SlackAttachment) {
+	t.Helper()
+	footer := strings.ToLower(att.Footer)
+	for _, disallowed := range []string{
+		"--format json",
+		"codexbar cost --format json",
+		"codexbar usage --format json",
+		"codexbar config validate --format json",
+		"codexbar cli",
+	} {
+		if strings.Contains(footer, disallowed) {
+			t.Fatalf("footer exposes internal command %q in %q", disallowed, att.Footer)
+		}
+	}
 }

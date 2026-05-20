@@ -168,7 +168,7 @@ func renderCostStdout(stdout []byte) []*model.SlackAttachment {
 			Title:  "CodexBar cost",
 			Text:   "No local cost data was returned.",
 			Color:  colorWarning,
-			Footer: "codexbar cost --format json",
+			Footer: dataFooter("cost", ""),
 		}}
 	}
 	sort.SliceStable(reports, func(i, j int) bool {
@@ -204,7 +204,7 @@ func renderCostReport(report costReport) *model.SlackAttachment {
 		Text:   text,
 		Color:  colorAccent,
 		Fields: fields,
-		Footer: "codexbar cost --format json" + updatedSuffix(report.UpdatedAt),
+		Footer: dataFooter("cost", report.UpdatedAt),
 	}
 }
 
@@ -218,7 +218,7 @@ func renderUsageStdout(stdout []byte) []*model.SlackAttachment {
 			Title:  "CodexBar usage",
 			Text:   "No usage providers were returned.",
 			Color:  colorWarning,
-			Footer: "codexbar usage --format json --status",
+			Footer: dataFooter("usage", ""),
 		}}
 	}
 	sort.SliceStable(reports, func(i, j int) bool {
@@ -267,7 +267,7 @@ func renderUsageReport(report usageReport) *model.SlackAttachment {
 		Text:   text,
 		Color:  usageColor(report.Usage, report.Status),
 		Fields: fields,
-		Footer: "codexbar usage --format json --status" + usageUpdatedSuffix(report),
+		Footer: dataFooter("usage", usageUpdatedAt(report)),
 	}
 }
 
@@ -281,7 +281,7 @@ func renderConfigStdout(stdout []byte) *model.SlackAttachment {
 			Title:  "CodexBar config",
 			Text:   "Configuration validates cleanly.",
 			Color:  colorGood,
-			Footer: "codexbar config validate --format json",
+			Footer: configFooter(),
 		}
 	}
 	pretty, err := prettyJSON(stdout)
@@ -292,7 +292,7 @@ func renderConfigStdout(stdout []byte) *model.SlackAttachment {
 		Title:  "CodexBar config - validation findings",
 		Text:   codeBlock(pretty),
 		Color:  colorWarning,
-		Footer: "codexbar config validate --format json",
+		Footer: configFooter(),
 	}
 }
 
@@ -333,7 +333,7 @@ func renderExitError(out codexbarOutput) *model.SlackAttachment {
 		Title:  fmt.Sprintf("CodexBar %s - exit %d", out.Label, out.Result.ExitCode),
 		Text:   truncate(text, 2000),
 		Color:  colorError,
-		Footer: "codexbar CLI",
+		Footer: "CodexBar execution",
 	}
 }
 
@@ -354,7 +354,7 @@ func renderProviderError(title, provider, source string, err *providerError) *mo
 		Text:   msg,
 		Color:  colorError,
 		Fields: fields,
-		Footer: "codexbar usage --format json --status",
+		Footer: dataFooter("usage", ""),
 	}
 }
 
@@ -515,15 +515,23 @@ func updatedSuffix(updatedAt string) string {
 	return " · updated " + formatTime(updatedAt)
 }
 
-func usageUpdatedSuffix(report usageReport) string {
+func dataFooter(kind, updatedAt string) string {
+	return "CodexBar " + kind + " data" + updatedSuffix(updatedAt)
+}
+
+func configFooter() string {
+	return "CodexBar config validation"
+}
+
+func usageUpdatedAt(report usageReport) string {
 	if report.Usage != nil && report.Usage.UpdatedAt != "" {
-		return updatedSuffix(report.Usage.UpdatedAt)
+		return report.Usage.UpdatedAt
 	}
 	if report.Status != nil && report.Status.UpdatedAt != "" {
-		return updatedSuffix(report.Status.UpdatedAt)
+		return report.Status.UpdatedAt
 	}
 	if report.Credits != nil && report.Credits.UpdatedAt != "" {
-		return updatedSuffix(report.Credits.UpdatedAt)
+		return report.Credits.UpdatedAt
 	}
 	return ""
 }

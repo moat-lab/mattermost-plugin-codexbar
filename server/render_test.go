@@ -95,7 +95,81 @@ func TestRenderUsageStdout(t *testing.T) {
 	if !fieldContains(att.Fields, "Plan", "Claude Max") {
 		t.Fatalf("missing plan field: %#v", att.Fields)
 	}
+	assertNoInternalUsageLimitFieldNames(t, att)
 	assertNoInternalCommandFooter(t, att)
+}
+
+func TestRenderUsageStdoutReadableLimitLabels(t *testing.T) {
+	stdout := []byte(`[
+	  {
+	    "provider": "codex",
+	    "source": "web",
+	    "usage": {
+	      "accountEmail": "codex@example.com",
+	      "loginMethod": "Codex Pro",
+	      "primary": {"usedPercent": 12, "resetDescription": "resets at noon", "windowMinutes": 300},
+	      "secondary": {"usedPercent": 34, "resetDescription": "resets Sunday", "windowMinutes": 10080}
+	    }
+	  },
+	  {
+	    "provider": "claude",
+	    "source": "web",
+	    "usage": {
+	      "accountEmail": "claude@example.com",
+	      "loginMethod": "Claude Max",
+	      "primary": {"usedPercent": 0, "resetDescription": "May 19 at 1:20PM", "windowMinutes": 300},
+	      "secondary": {"usedPercent": 70, "resetDescription": "May 20 at 5:59AM", "windowMinutes": 10080}
+	    }
+	  },
+	  {
+	    "provider": "gemini",
+	    "source": "api",
+	    "usage": {
+	      "accountEmail": "gemini@example.com",
+	      "loginMethod": "Gemini API",
+	      "primary": {"usedPercent": 45, "resetDescription": "resets tomorrow", "windowMinutes": 1440},
+	      "secondary": {"usedPercent": 89, "resetDescription": "resets next week", "windowMinutes": 10080},
+	      "tertiary": {"usedPercent": 67, "resetDescription": "resets soon", "windowMinutes": 60}
+	    }
+	  }
+	]`)
+
+	attachments := renderUsageStdout(stdout)
+	if len(attachments) != 3 {
+		t.Fatalf("attachments = %d, want 3", len(attachments))
+	}
+
+	for _, att := range attachments {
+		assertNoInternalUsageLimitFieldNames(t, att)
+	}
+
+	codex := attachmentByTitle(t, attachments, "CodexBar usage - Codex")
+	claude := attachmentByTitle(t, attachments, "CodexBar usage - Claude")
+	gemini := attachmentByTitle(t, attachments, "CodexBar usage - Gemini")
+
+	if !fieldContains(codex.Fields, "5h limit", "12% used") ||
+		!fieldContains(codex.Fields, "5h limit", "resets at noon") ||
+		!fieldContains(codex.Fields, "5h limit", "5h window") {
+		t.Fatalf("codex short window field lost value/reset/window: %s", fieldsDebugString(codex.Fields))
+	}
+	if !fieldContains(codex.Fields, "Weekly limit", "34% used") ||
+		!fieldContains(codex.Fields, "Weekly limit", "resets Sunday") ||
+		!fieldContains(codex.Fields, "Weekly limit", "1w window") {
+		t.Fatalf("codex weekly field lost value/reset/window: %s", fieldsDebugString(codex.Fields))
+	}
+	if !fieldContains(claude.Fields, "5h limit", "0% used") ||
+		!fieldContains(claude.Fields, "Weekly limit", "70% used") {
+		t.Fatalf("claude readable limit fields missing: %s", fieldsDebugString(claude.Fields))
+	}
+	if !fieldContains(gemini.Fields, "Daily limit", "45% used") ||
+		!fieldContains(gemini.Fields, "Daily limit", "resets tomorrow") ||
+		!fieldContains(gemini.Fields, "Daily limit", "1d window") {
+		t.Fatalf("gemini daily field lost value/reset/window: %s", fieldsDebugString(gemini.Fields))
+	}
+	if !fieldContains(gemini.Fields, "Weekly limit", "89% used") ||
+		!fieldContains(gemini.Fields, "Hourly limit", "67% used") {
+		t.Fatalf("gemini readable limit fields missing: %s", fieldsDebugString(gemini.Fields))
+	}
 }
 
 func TestRenderUsageProviderError(t *testing.T) {
@@ -234,6 +308,35 @@ func fieldContains(fields []*model.SlackAttachmentField, title, want string) boo
 		}
 	}
 	return false
+}
+
+func attachmentByTitle(t *testing.T, attachments []*model.SlackAttachment, title string) *model.SlackAttachment {
+	t.Helper()
+	for _, att := range attachments {
+		if att.Title == title {
+			return att
+		}
+	}
+	t.Fatalf("missing attachment %q", title)
+	return nil
+}
+
+func fieldsDebugString(fields []*model.SlackAttachmentField) string {
+	parts := make([]string, 0, len(fields))
+	for _, field := range fields {
+		parts = append(parts, field.Title+"="+field.Value.(string))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func assertNoInternalUsageLimitFieldNames(t *testing.T, att *model.SlackAttachment) {
+	t.Helper()
+	for _, field := range att.Fields {
+		switch field.Title {
+		case "Primary", "Secondary", "Tertiary":
+			t.Fatalf("usage field exposes internal label %q in %#v", field.Title, att.Fields)
+		}
+	}
 }
 
 func assertNoInternalCommandFooter(t *testing.T, att *model.SlackAttachment) {

@@ -44,6 +44,19 @@ func TestBuildCodexbarRequestUsageSource(t *testing.T) {
 	if !reflect.DeepEqual(req.Invocations[0].Argv, want) {
 		t.Fatalf("argv = %#v, want %#v", req.Invocations[0].Argv, want)
 	}
+	if req.Invocations[0].UsageHints != (usageRenderHints{Provider: "claude", Source: "cli"}) {
+		t.Fatalf("usage hints = %#v", req.Invocations[0].UsageHints)
+	}
+}
+
+func TestBuildCodexbarRequestUsageProviderHint(t *testing.T) {
+	req, err := buildCodexbarRequest("/codexbar usage gemini", "codexbar", "")
+	if err != nil {
+		t.Fatalf("buildCodexbarRequest: %v", err)
+	}
+	if req.Invocations[0].UsageHints != (usageRenderHints{Provider: "gemini"}) {
+		t.Fatalf("usage hints = %#v", req.Invocations[0].UsageHints)
+	}
 }
 
 func TestBuildCodexbarRequestUsageAllSplitsProviders(t *testing.T) {
@@ -66,6 +79,9 @@ func TestBuildCodexbarRequestUsageAllSplitsProviders(t *testing.T) {
 		if req.Invocations[i].Cwd != "/helpers" {
 			t.Fatalf("invocation %d cwd = %q, want /helpers", i, req.Invocations[i].Cwd)
 		}
+	}
+	if req.Invocations[2].UsageHints != (usageRenderHints{Provider: "gemini", Source: "api"}) {
+		t.Fatalf("gemini usage hints = %#v", req.Invocations[2].UsageHints)
 	}
 }
 

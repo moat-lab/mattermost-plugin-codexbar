@@ -54,16 +54,23 @@ type codexbarRequest struct {
 }
 
 type codexbarInvocation struct {
-	Label   string
-	Argv    []string
-	Cwd     string
-	Timeout time.Duration
+	Label      string
+	Argv       []string
+	Cwd        string
+	Timeout    time.Duration
+	UsageHints usageRenderHints
 }
 
 type codexbarOutput struct {
-	Label  string
-	Result *rexec.Result
-	Err    error
+	Label      string
+	Result     *rexec.Result
+	Err        error
+	UsageHints usageRenderHints
+}
+
+type usageRenderHints struct {
+	Provider string
+	Source   string
 }
 
 func buildAutocompleteTree() *model.AutocompleteData {
@@ -136,9 +143,10 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 		res, runErr := rc.Run(ctx, inv.Argv, rexec.WithTimeout(inv.Timeout), rexec.WithCwd(inv.Cwd))
 		cancel()
 		outputs = append(outputs, codexbarOutput{
-			Label:  inv.Label,
-			Result: res,
-			Err:    runErr,
+			Label:      inv.Label,
+			Result:     res,
+			Err:        runErr,
+			UsageHints: inv.UsageHints,
 		})
 	}
 
@@ -304,10 +312,11 @@ func buildUsageInvocations(bin, cwd string, args []string) ([]codexbarInvocation
 		return allUsageInvocations(bin, cwd), nil
 	}
 	return []codexbarInvocation{{
-		Label:   "usage",
-		Argv:    buildUsageArgv(bin, opts.provider, opts.source),
-		Cwd:     cwd,
-		Timeout: usageTimeout,
+		Label:      "usage",
+		Argv:       buildUsageArgv(bin, opts.provider, opts.source),
+		Cwd:        cwd,
+		Timeout:    usageTimeout,
+		UsageHints: usageRenderHints{Provider: opts.provider, Source: opts.source},
 	}}, nil
 }
 
@@ -335,10 +344,11 @@ func usageInvocationsFor(bin, cwd string, specs []usageProviderSource) []codexba
 	invocations := make([]codexbarInvocation, 0, len(specs))
 	for _, spec := range specs {
 		invocations = append(invocations, codexbarInvocation{
-			Label:   "usage",
-			Argv:    buildUsageArgv(bin, spec.provider, spec.source),
-			Cwd:     cwd,
-			Timeout: usageTimeout,
+			Label:      "usage",
+			Argv:       buildUsageArgv(bin, spec.provider, spec.source),
+			Cwd:        cwd,
+			Timeout:    usageTimeout,
+			UsageHints: usageRenderHints{Provider: spec.provider, Source: spec.source},
 		})
 	}
 	return invocations

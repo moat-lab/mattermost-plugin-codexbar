@@ -130,14 +130,14 @@ func renderOutputs(mode commandMode, outputs []codexbarOutput) []*model.SlackAtt
 		}
 		if out.Result.ExitCode != 0 {
 			if len(out.Result.Stdout) > 0 {
-				attachments = append(attachments, renderStdoutByLabel(reqModeTitle(mode), out.Label, out.Result.Stdout)...)
+				attachments = append(attachments, renderStdoutByLabel(reqModeTitle(mode), out.Label, out.Result.Stdout, out.UsageHints)...)
 				continue
 			}
 			attachments = append(attachments, renderExitError(out))
 			continue
 		}
 
-		attachments = append(attachments, renderStdoutByLabel(reqModeTitle(mode), out.Label, out.Result.Stdout)...)
+		attachments = append(attachments, renderStdoutByLabel(reqModeTitle(mode), out.Label, out.Result.Stdout, out.UsageHints)...)
 	}
 	if len(attachments) == 0 {
 		attachments = append(attachments, &model.SlackAttachment{
@@ -153,12 +153,12 @@ func reqModeTitle(mode commandMode) string {
 	return "CodexBar " + string(mode)
 }
 
-func renderStdoutByLabel(title, label string, stdout []byte) []*model.SlackAttachment {
+func renderStdoutByLabel(title, label string, stdout []byte, hints usageRenderHints) []*model.SlackAttachment {
 	switch label {
 	case "cost":
 		return renderCostStdout(stdout)
 	case "usage":
-		return renderUsageStdout(stdout)
+		return renderUsageStdoutWithHints(stdout, hints)
 	case "config":
 		return []*model.SlackAttachment{renderConfigStdout(stdout)}
 	default:
@@ -217,6 +217,10 @@ func renderCostReport(report costReport) *model.SlackAttachment {
 }
 
 func renderUsageStdout(stdout []byte) []*model.SlackAttachment {
+	return renderUsageStdoutWithHints(stdout, usageRenderHints{})
+}
+
+func renderUsageStdoutWithHints(stdout []byte, hints usageRenderHints) []*model.SlackAttachment {
 	var reports []usageReport
 	if err := json.Unmarshal(stdout, &reports); err != nil {
 		return []*model.SlackAttachment{renderJSONError("CodexBar usage", err, stdout)}
@@ -230,24 +234,26 @@ func renderUsageStdout(stdout []byte) []*model.SlackAttachment {
 		}}
 	}
 	sort.SliceStable(reports, func(i, j int) bool {
-		return reports[i].Provider < reports[j].Provider
+		return usageProvider(reports[i].Provider, hints) < usageProvider(reports[j].Provider, hints)
 	})
 	out := make([]*model.SlackAttachment, 0, len(reports))
 	for _, report := range reports {
-		out = append(out, renderUsageReport(report))
+		out = append(out, renderUsageReport(report, hints))
 	}
 	return out
 }
 
-func renderUsageReport(report usageReport) *model.SlackAttachment {
-	provider := displayProvider(report.Provider)
+func renderUsageReport(report usageReport, hints usageRenderHints) *model.SlackAttachment {
+	provider := usageProvider(report.Provider, hints)
+	source := usageSource(report.Provider, report.Source, hints)
+	displayName := displayProvider(provider)
 	if report.Error != nil {
-		return renderProviderError("CodexBar usage - "+provider, report.Provider, report.Source, report.Error)
+		return renderProviderError("CodexBar usage - "+displayName, provider, source, report.Error)
 	}
 
 	fields := []*model.SlackAttachmentField{
-		shortField("Provider", provider),
-		shortField("Source", emptyAs(report.Source, "unknown")),
+		shortField("Provider", displayName),
+		shortField("Source", emptyAs(source, "unknown")),
 	}
 	if report.Usage != nil {
 		fields = append(fields,
@@ -271,7 +277,7 @@ func renderUsageReport(report usageReport) *model.SlackAttachment {
 		text = "Live provider usage fetched from CodexBar."
 	}
 	return &model.SlackAttachment{
-		Title:  "CodexBar usage - " + provider,
+		Title:  "CodexBar usage - " + displayName,
 		Text:   text,
 		Color:  usageColor(report.Usage, report.Status),
 		Fields: fields,
@@ -363,6 +369,40 @@ func renderProviderError(title, provider, source string, err *providerError) *mo
 		Color:  colorError,
 		Fields: fields,
 		Footer: dataFooter("usage", ""),
+	}
+}
+
+func usageProvider(provider string, hints usageRenderHints) string {
+	value := strings.TrimSpace(provider)
+	if shouldUseUsageProviderHint(value, hints) {
+		return hints.Provider
+	}
+	return value
+}
+
+func shouldUseUsageProviderHint(provider string, hints usageRenderHints) bool {
+	if hints.Provider == "" || hints.Provider == "all" {
+		return false
+	}
+	return provider == "" || isUsageSourceToken(provider)
+}
+
+func usageSource(provider, source string, hints usageRenderHints) string {
+	if strings.TrimSpace(source) != "" {
+		return source
+	}
+	if isUsageSourceToken(provider) {
+		return strings.TrimSpace(provider)
+	}
+	return hints.Source
+}
+
+func isUsageSourceToken(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "auto", "web", "cli", "oauth", "api", "oauth-api", "openai-web":
+		return true
+	default:
+		return false
 	}
 }
 

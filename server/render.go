@@ -98,6 +98,14 @@ type extraRateWindow struct {
 	Window usageWindow `json:"window"`
 }
 
+type usageWindowSlot string
+
+const (
+	usageWindowPrimary   usageWindowSlot = "primary"
+	usageWindowSecondary usageWindowSlot = "secondary"
+	usageWindowTertiary  usageWindowSlot = "tertiary"
+)
+
 type creditsInfo struct {
 	Remaining float64 `json:"remaining"`
 	UpdatedAt string  `json:"updatedAt"`
@@ -399,15 +407,40 @@ func usageWindowFields(usage *providerUsage) []*model.SlackAttachmentField {
 	}
 	fields := []*model.SlackAttachmentField{}
 	if usage.Primary != nil {
-		fields = append(fields, shortField("Primary", formatWindow(usage.Primary)))
+		fields = append(fields, shortField(usageWindowTitle(usageWindowPrimary, usage.Primary), formatWindow(usage.Primary)))
 	}
 	if usage.Secondary != nil {
-		fields = append(fields, shortField("Secondary", formatWindow(usage.Secondary)))
+		fields = append(fields, shortField(usageWindowTitle(usageWindowSecondary, usage.Secondary), formatWindow(usage.Secondary)))
 	}
 	if usage.Tertiary != nil {
-		fields = append(fields, shortField("Tertiary", formatWindow(usage.Tertiary)))
+		fields = append(fields, shortField(usageWindowTitle(usageWindowTertiary, usage.Tertiary), formatWindow(usage.Tertiary)))
 	}
 	return fields
+}
+
+func usageWindowTitle(slot usageWindowSlot, w *usageWindow) string {
+	if w != nil && w.WindowMinutes > 0 {
+		switch w.WindowMinutes {
+		case 60:
+			return "Hourly limit"
+		case 1440:
+			return "Daily limit"
+		case 10080:
+			return "Weekly limit"
+		}
+		return strings.TrimSuffix(windowLength(w.WindowMinutes), " window") + " limit"
+	}
+
+	switch slot {
+	case usageWindowPrimary:
+		return "Main limit"
+	case usageWindowSecondary:
+		return "Additional limit"
+	case usageWindowTertiary:
+		return "Supplemental limit"
+	default:
+		return "Usage limit"
+	}
 }
 
 func formatWindow(w *usageWindow) string {

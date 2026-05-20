@@ -35,6 +35,23 @@ func TestBuildCodexbarRequestSummary(t *testing.T) {
 	}
 }
 
+func TestBuildCodexbarRequestBareAndSummaryShareOrderingPath(t *testing.T) {
+	bare, err := buildCodexbarRequest("/codexbar", "codexbar", "/helpers")
+	if err != nil {
+		t.Fatalf("build bare request: %v", err)
+	}
+	explicit, err := buildCodexbarRequest("/codexbar summary", "codexbar", "/helpers")
+	if err != nil {
+		t.Fatalf("build summary request: %v", err)
+	}
+	if bare.Mode != modeSummary || explicit.Mode != modeSummary {
+		t.Fatalf("modes = %q/%q, want summary/summary", bare.Mode, explicit.Mode)
+	}
+	if !reflect.DeepEqual(bare.Invocations, explicit.Invocations) {
+		t.Fatalf("invocations differ: bare=%#v summary=%#v", bare.Invocations, explicit.Invocations)
+	}
+}
+
 func TestBuildCodexbarRequestUsageSource(t *testing.T) {
 	req, err := buildCodexbarRequest("/codexbar usage --provider claude --source cli", "codexbar", "")
 	if err != nil {

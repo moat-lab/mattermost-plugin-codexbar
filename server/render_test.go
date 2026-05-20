@@ -274,6 +274,61 @@ func TestRenderUsageProviderErrorNumericCode(t *testing.T) {
 	assertNoInternalCommandFooter(t, att)
 }
 
+func TestRenderSummaryOutputsGroupsUsageAndCostByProvider(t *testing.T) {
+	codexUsage := []byte(`[
+	  {
+	    "provider": "codex",
+	    "source": "web",
+	    "usage": {
+	      "accountEmail": "codex@example.com",
+	      "loginMethod": "Codex Pro",
+	      "primary": {"usedPercent": 12, "windowMinutes": 300}
+	    }
+	  }
+	]`)
+	claudeUsage := []byte(`[
+	  {
+	    "provider": "claude",
+	    "source": "web",
+	    "usage": {
+	      "accountEmail": "claude@example.com",
+	      "loginMethod": "Claude Max",
+	      "primary": {"usedPercent": 34, "windowMinutes": 300}
+	    }
+	  }
+	]`)
+	cost := []byte(`[
+	  {"provider": "gemini", "source": "local"},
+	  {"provider": "claude", "source": "local"},
+	  {"provider": "codex", "source": "local"}
+	]`)
+
+	attachments := renderOutputs(modeSummary, []codexbarOutput{
+		{
+			Label:      "usage",
+			Result:     &rexec.Result{Stdout: codexUsage},
+			UsageHints: usageRenderHints{Provider: "codex", Source: "web"},
+		},
+		{
+			Label:      "usage",
+			Result:     &rexec.Result{Stdout: claudeUsage},
+			UsageHints: usageRenderHints{Provider: "claude", Source: "web"},
+		},
+		{
+			Label:  "cost",
+			Result: &rexec.Result{Stdout: cost},
+		},
+	})
+
+	assertAttachmentTitles(t, attachments, []string{
+		"CodexBar usage - Codex",
+		"CodexBar cost - Codex",
+		"CodexBar usage - Claude",
+		"CodexBar cost - Claude",
+		"CodexBar cost - Gemini",
+	})
+}
+
 func TestRenderConfigStdout(t *testing.T) {
 	att := renderConfigStdout([]byte(`[]`))
 	if att.Color != colorGood {
@@ -394,6 +449,22 @@ func attachmentByTitle(t *testing.T, attachments []*model.SlackAttachment, title
 	}
 	t.Fatalf("missing attachment %q", title)
 	return nil
+}
+
+func assertAttachmentTitles(t *testing.T, attachments []*model.SlackAttachment, want []string) {
+	t.Helper()
+	got := make([]string, 0, len(attachments))
+	for _, att := range attachments {
+		got = append(got, att.Title)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("titles = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("titles = %#v, want %#v", got, want)
+		}
+	}
 }
 
 func fieldsDebugString(fields []*model.SlackAttachmentField) string {

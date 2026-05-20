@@ -14,7 +14,11 @@ const (
 	defaultCodexbarBin = "codexbar"
 )
 
-type configuration struct{}
+// configuration mirrors plugin.json's settings_schema. Field names must match
+// setting keys so Mattermost LoadPluginConfiguration binds them.
+type configuration struct {
+	HideAccountValues bool `json:"HideAccountValues"`
+}
 
 func resolveRexecdAddr() (string, error) {
 	raw := strings.TrimSpace(os.Getenv(rexecdAddrEnv))

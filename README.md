@@ -35,7 +35,11 @@ Set these environment variables on the Mattermost server process:
 | `CODEXBAR_BIN` | no | Binary path executed by rexecd. Defaults to `codexbar`; vctcn should use `/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI`. |
 | `CODEXBAR_CWD` | no | Working directory passed to rexecd. vctcn should use `/Applications/CodexBar.app/Contents/Helpers` so the Swift CLI resolves its app bundle correctly. |
 
-The plugin has no Mattermost System Console settings. Deployment coordinates stay in the runtime environment/IaC.
+Deployment coordinates stay in the runtime environment/IaC. The Mattermost System Console only exposes business/display settings:
+
+| Setting | Default | Meaning |
+|---|---:|---|
+| `HideAccountValues` | `false` | When enabled, usage and summary cards render Account fields as `***` without changing CodexBar CLI execution or output. |
 
 ## Build And Test
 

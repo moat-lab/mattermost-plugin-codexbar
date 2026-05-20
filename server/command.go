@@ -150,7 +150,9 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 		})
 	}
 
-	attachments := renderOutputs(req.Mode, outputs)
+	attachments := renderOutputsWithOptions(req.Mode, outputs, renderOptions{
+		HideAccountValues: p.getHideAccountValues(),
+	})
 	post := botPost(args.ChannelId, botID, attachments...)
 	if err := client.Post.CreatePost(post); err != nil {
 		return ephemeral(fmt.Sprintf("create post failed: %v", err)), nil

@@ -16,7 +16,13 @@ const (
 	colorAccent  = "#386FA4"
 	colorWarning = "#B7791F"
 	colorError   = "#C53030"
+
+	hiddenAccountValue = `\*\*\*`
 )
+
+type renderOptions struct {
+	HideAccountValues bool
+}
 
 type tokenTotals struct {
 	InputTokens         int64   `json:"inputTokens"`
@@ -133,8 +139,12 @@ type summaryCard struct {
 }
 
 func renderOutputs(mode commandMode, outputs []codexbarOutput) []*model.SlackAttachment {
+	return renderOutputsWithOptions(mode, outputs, renderOptions{})
+}
+
+func renderOutputsWithOptions(mode commandMode, outputs []codexbarOutput, opts renderOptions) []*model.SlackAttachment {
 	if mode == modeSummary {
-		return renderSummaryOutputs(outputs)
+		return renderSummaryOutputs(outputs, opts)
 	}
 
 	var attachments []*model.SlackAttachment
@@ -149,14 +159,14 @@ func renderOutputs(mode commandMode, outputs []codexbarOutput) []*model.SlackAtt
 		}
 		if out.Result.ExitCode != 0 {
 			if len(out.Result.Stdout) > 0 {
-				attachments = append(attachments, renderStdoutByLabel(reqModeTitle(mode), out.Label, out.Result.Stdout, out.UsageHints)...)
+				attachments = append(attachments, renderStdoutByLabel(reqModeTitle(mode), out.Label, out.Result.Stdout, out.UsageHints, opts)...)
 				continue
 			}
 			attachments = append(attachments, renderExitError(out))
 			continue
 		}
 
-		attachments = append(attachments, renderStdoutByLabel(reqModeTitle(mode), out.Label, out.Result.Stdout, out.UsageHints)...)
+		attachments = append(attachments, renderStdoutByLabel(reqModeTitle(mode), out.Label, out.Result.Stdout, out.UsageHints, opts)...)
 	}
 	if len(attachments) == 0 {
 		attachments = append(attachments, &model.SlackAttachment{
@@ -168,10 +178,10 @@ func renderOutputs(mode commandMode, outputs []codexbarOutput) []*model.SlackAtt
 	return attachments
 }
 
-func renderSummaryOutputs(outputs []codexbarOutput) []*model.SlackAttachment {
+func renderSummaryOutputs(outputs []codexbarOutput, opts renderOptions) []*model.SlackAttachment {
 	var cards []summaryCard
 	for _, out := range outputs {
-		for _, card := range renderSummaryOutput(out) {
+		for _, card := range renderSummaryOutput(out, opts) {
 			card.sequence = len(cards)
 			cards = append(cards, card)
 		}
@@ -201,7 +211,7 @@ func renderSummaryOutputs(outputs []codexbarOutput) []*model.SlackAttachment {
 	return attachments
 }
 
-func renderSummaryOutput(out codexbarOutput) []summaryCard {
+func renderSummaryOutput(out codexbarOutput, opts renderOptions) []summaryCard {
 	if out.Err != nil {
 		return []summaryCard{summaryErrorCard(out, renderInvocationError(out))}
 	}
@@ -213,14 +223,14 @@ func renderSummaryOutput(out codexbarOutput) []summaryCard {
 		return []summaryCard{summaryErrorCard(out, renderExitError(out))}
 	}
 
-	return renderSummaryStdoutByLabel(out)
+	return renderSummaryStdoutByLabel(out, opts)
 }
 
-func renderSummaryStdoutByLabel(out codexbarOutput) []summaryCard {
+func renderSummaryStdoutByLabel(out codexbarOutput, opts renderOptions) []summaryCard {
 	stdout := out.Result.Stdout
 	switch out.Label {
 	case "usage":
-		return renderSummaryUsageStdout(stdout, out.UsageHints)
+		return renderSummaryUsageStdout(stdout, out.UsageHints, opts)
 	case "cost":
 		return renderSummaryCostStdout(stdout)
 	case "config":
@@ -230,7 +240,7 @@ func renderSummaryStdoutByLabel(out codexbarOutput) []summaryCard {
 	}
 }
 
-func renderSummaryUsageStdout(stdout []byte, hints usageRenderHints) []summaryCard {
+func renderSummaryUsageStdout(stdout []byte, hints usageRenderHints, opts renderOptions) []summaryCard {
 	var reports []usageReport
 	if err := json.Unmarshal(stdout, &reports); err != nil {
 		return []summaryCard{{
@@ -257,7 +267,7 @@ func renderSummaryUsageStdout(stdout []byte, hints usageRenderHints) []summaryCa
 		cards = append(cards, summaryCard{
 			provider:   usageProvider(report.Provider, hints),
 			kind:       summaryCardUsage,
-			attachment: renderUsageReport(report, hints),
+			attachment: renderUsageReport(report, hints, opts),
 		})
 	}
 	return cards
@@ -362,12 +372,12 @@ func reqModeTitle(mode commandMode) string {
 	return "CodexBar " + string(mode)
 }
 
-func renderStdoutByLabel(title, label string, stdout []byte, hints usageRenderHints) []*model.SlackAttachment {
+func renderStdoutByLabel(title, label string, stdout []byte, hints usageRenderHints, opts renderOptions) []*model.SlackAttachment {
 	switch label {
 	case "cost":
 		return renderCostStdout(stdout)
 	case "usage":
-		return renderUsageStdoutWithHints(stdout, hints)
+		return renderUsageStdoutWithOptions(stdout, hints, opts)
 	case "config":
 		return []*model.SlackAttachment{renderConfigStdout(stdout)}
 	default:
@@ -430,6 +440,10 @@ func renderUsageStdout(stdout []byte) []*model.SlackAttachment {
 }
 
 func renderUsageStdoutWithHints(stdout []byte, hints usageRenderHints) []*model.SlackAttachment {
+	return renderUsageStdoutWithOptions(stdout, hints, renderOptions{})
+}
+
+func renderUsageStdoutWithOptions(stdout []byte, hints usageRenderHints, opts renderOptions) []*model.SlackAttachment {
 	var reports []usageReport
 	if err := json.Unmarshal(stdout, &reports); err != nil {
 		return []*model.SlackAttachment{renderJSONError("CodexBar usage", err, stdout)}
@@ -447,12 +461,12 @@ func renderUsageStdoutWithHints(stdout []byte, hints usageRenderHints) []*model.
 	})
 	out := make([]*model.SlackAttachment, 0, len(reports))
 	for _, report := range reports {
-		out = append(out, renderUsageReport(report, hints))
+		out = append(out, renderUsageReport(report, hints, opts))
 	}
 	return out
 }
 
-func renderUsageReport(report usageReport, hints usageRenderHints) *model.SlackAttachment {
+func renderUsageReport(report usageReport, hints usageRenderHints, opts renderOptions) *model.SlackAttachment {
 	provider := usageProvider(report.Provider, hints)
 	source := usageSource(report.Provider, report.Source, hints)
 	displayName := displayProvider(provider)
@@ -466,7 +480,7 @@ func renderUsageReport(report usageReport, hints usageRenderHints) *model.SlackA
 	}
 	if report.Usage != nil {
 		fields = append(fields,
-			shortField("Account", firstNonEmpty(report.Usage.AccountEmail, report.Usage.AccountOrganization, "unknown")),
+			shortField("Account", accountFieldValue(report.Usage, opts)),
 			shortField("Plan", emptyAs(report.Usage.LoginMethod, "unknown")),
 		)
 		fields = append(fields, usageWindowFields(report.Usage)...)
@@ -492,6 +506,13 @@ func renderUsageReport(report usageReport, hints usageRenderHints) *model.SlackA
 		Fields: fields,
 		Footer: dataFooter("usage", usageUpdatedAt(report)),
 	}
+}
+
+func accountFieldValue(usage *providerUsage, opts renderOptions) string {
+	if opts.HideAccountValues {
+		return hiddenAccountValue
+	}
+	return firstNonEmpty(usage.AccountEmail, usage.AccountOrganization, "unknown")
 }
 
 func renderConfigStdout(stdout []byte) *model.SlackAttachment {

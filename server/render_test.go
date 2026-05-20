@@ -147,6 +147,10 @@ func TestRenderUsageStdoutReadableLimitLabels(t *testing.T) {
 	claude := attachmentByTitle(t, attachments, "CodexBar usage - Claude")
 	gemini := attachmentByTitle(t, attachments, "CodexBar usage - Gemini")
 
+	assertProviderSource(t, codex, "Codex", "web")
+	assertProviderSource(t, claude, "Claude", "web")
+	assertProviderSource(t, gemini, "Gemini", "api")
+
 	if !fieldContains(codex.Fields, "5h limit", "12% used") ||
 		!fieldContains(codex.Fields, "5h limit", "resets at noon") ||
 		!fieldContains(codex.Fields, "5h limit", "5h window") {
@@ -170,6 +174,50 @@ func TestRenderUsageStdoutReadableLimitLabels(t *testing.T) {
 		!fieldContains(gemini.Fields, "Hourly limit", "67% used") {
 		t.Fatalf("gemini readable limit fields missing: %s", fieldsDebugString(gemini.Fields))
 	}
+}
+
+func TestRenderUsageStdoutUsesProviderHintWhenSourceLeaksIntoProvider(t *testing.T) {
+	stdout := []byte(`[
+	  {
+	    "provider": "cli",
+	    "source": "cli",
+	    "usage": {
+	      "accountEmail": "gemini@example.com",
+	      "loginMethod": "Gemini API",
+	      "primary": {"usedPercent": 45, "resetDescription": "resets tomorrow", "windowMinutes": 1440}
+	    }
+	  }
+	]`)
+
+	attachments := renderUsageStdoutWithHints(stdout, usageRenderHints{Provider: "gemini", Source: "cli"})
+	if len(attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(attachments))
+	}
+	att := attachments[0]
+	if att.Title != "CodexBar usage - Gemini" {
+		t.Fatalf("title = %q", att.Title)
+	}
+	assertProviderSource(t, att, "Gemini", "cli")
+}
+
+func TestRenderUsageStdoutUsesRealReturnedSourceWithProviderHint(t *testing.T) {
+	stdout := []byte(`[
+	  {
+	    "provider": "cli",
+	    "source": "oauth-api",
+	    "usage": {
+	      "accountEmail": "gemini@example.com",
+	      "loginMethod": "Gemini API",
+	      "primary": {"usedPercent": 45, "resetDescription": "resets tomorrow", "windowMinutes": 1440}
+	    }
+	  }
+	]`)
+
+	attachments := renderUsageStdoutWithHints(stdout, usageRenderHints{Provider: "gemini", Source: "api"})
+	if len(attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(attachments))
+	}
+	assertProviderSource(t, attachments[0], "Gemini", "oauth-api")
 }
 
 func TestRenderUsageProviderError(t *testing.T) {
@@ -301,6 +349,33 @@ func TestRenderOutputsUsesStructuredStdoutOnNonZeroExit(t *testing.T) {
 	assertNoInternalCommandFooter(t, attachments[0])
 }
 
+func TestRenderOutputsUsesUsageHintsOnStructuredNonZeroExit(t *testing.T) {
+	stdout := []byte(`[
+	  {
+	    "provider": "cli",
+	    "source": "cli",
+	    "error": {
+	      "kind": "provider",
+	      "code": "1",
+	      "message": "Source 'cli' is not supported for gemini."
+	    }
+	  }
+	]`)
+
+	attachments := renderOutputs(modeUsage, []codexbarOutput{{
+		Label:      "usage",
+		Result:     &rexec.Result{ExitCode: 1, Stdout: stdout},
+		UsageHints: usageRenderHints{Provider: "gemini", Source: "cli"},
+	}})
+	if len(attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(attachments))
+	}
+	if attachments[0].Title != "CodexBar usage - Gemini" {
+		t.Fatalf("title = %q", attachments[0].Title)
+	}
+	assertProviderSource(t, attachments[0], "Gemini", "cli")
+}
+
 func fieldContains(fields []*model.SlackAttachmentField, title, want string) bool {
 	for _, field := range fields {
 		if field.Title == title && strings.Contains(field.Value.(string), want) {
@@ -327,6 +402,16 @@ func fieldsDebugString(fields []*model.SlackAttachmentField) string {
 		parts = append(parts, field.Title+"="+field.Value.(string))
 	}
 	return strings.Join(parts, "; ")
+}
+
+func assertProviderSource(t *testing.T, att *model.SlackAttachment, provider, source string) {
+	t.Helper()
+	if !fieldContains(att.Fields, "Provider", provider) {
+		t.Fatalf("provider field missing %q: %s", provider, fieldsDebugString(att.Fields))
+	}
+	if !fieldContains(att.Fields, "Source", source) {
+		t.Fatalf("source field missing %q: %s", source, fieldsDebugString(att.Fields))
+	}
 }
 
 func assertNoInternalUsageLimitFieldNames(t *testing.T, att *model.SlackAttachment) {

@@ -141,3 +141,9 @@ func (p *Plugin) getCodexbarCwd() string {
 	defer p.mu.RUnlock()
 	return p.codexbarCwd
 }
+
+func (p *Plugin) getHideAccountValues() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.config.HideAccountValues
+}

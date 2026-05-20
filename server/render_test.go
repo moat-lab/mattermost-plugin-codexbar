@@ -95,8 +95,96 @@ func TestRenderUsageStdout(t *testing.T) {
 	if !fieldContains(att.Fields, "Plan", "Claude Max") {
 		t.Fatalf("missing plan field: %#v", att.Fields)
 	}
+	if !fieldContains(att.Fields, "Account", "ccc88@cornell.edu") {
+		t.Fatalf("missing default account field: %#v", att.Fields)
+	}
 	assertNoInternalUsageLimitFieldNames(t, att)
 	assertNoInternalCommandFooter(t, att)
+}
+
+func TestRenderUsageStdoutHidesAccountsWhenEnabled(t *testing.T) {
+	stdout := []byte(`[
+	  {
+	    "provider": "codex",
+	    "source": "web",
+	    "usage": {
+	      "accountEmail": "codex@example.com",
+	      "loginMethod": "Codex Pro",
+	      "primary": {"usedPercent": 12, "windowMinutes": 300}
+	    }
+	  },
+	  {
+	    "provider": "claude",
+	    "source": "web",
+	    "usage": {
+	      "accountEmail": "claude@example.com",
+	      "loginMethod": "Claude Max",
+	      "primary": {"usedPercent": 34, "windowMinutes": 300}
+	    }
+	  },
+	  {
+	    "provider": "gemini",
+	    "source": "api",
+	    "usage": {
+	      "accountOrganization": "gemini-org",
+	      "loginMethod": "Gemini API",
+	      "primary": {"usedPercent": 45, "windowMinutes": 1440}
+	    }
+	  }
+	]`)
+
+	attachments := renderUsageStdoutWithOptions(stdout, usageRenderHints{}, renderOptions{HideAccountValues: true})
+	if len(attachments) != 3 {
+		t.Fatalf("attachments = %d, want 3", len(attachments))
+	}
+
+	for _, att := range attachments {
+		assertFieldExact(t, att.Fields, "Account", hiddenAccountValue)
+		assertFieldMissingValue(t, att.Fields, "Account", "codex@example.com")
+		assertFieldMissingValue(t, att.Fields, "Account", "claude@example.com")
+		assertFieldMissingValue(t, att.Fields, "Account", "gemini-org")
+	}
+}
+
+func TestRenderUsageStdoutKeepsAccountsVisibleWhenDisabled(t *testing.T) {
+	stdout := []byte(`[
+	  {
+	    "provider": "codex",
+	    "source": "web",
+	    "usage": {
+	      "accountEmail": "codex@example.com",
+	      "loginMethod": "Codex Pro",
+	      "primary": {"usedPercent": 12, "windowMinutes": 300}
+	    }
+	  },
+	  {
+	    "provider": "claude",
+	    "source": "web",
+	    "usage": {
+	      "accountEmail": "claude@example.com",
+	      "loginMethod": "Claude Max",
+	      "primary": {"usedPercent": 34, "windowMinutes": 300}
+	    }
+	  },
+	  {
+	    "provider": "gemini",
+	    "source": "api",
+	    "usage": {
+	      "accountOrganization": "gemini-org",
+	      "loginMethod": "Gemini API",
+	      "primary": {"usedPercent": 45, "windowMinutes": 1440}
+	    }
+	  }
+	]`)
+
+	attachments := renderUsageStdoutWithOptions(stdout, usageRenderHints{}, renderOptions{})
+	if len(attachments) != 3 {
+		t.Fatalf("attachments = %d, want 3", len(attachments))
+	}
+
+	assertFieldExact(t, attachmentByTitle(t, attachments, "CodexBar usage - Codex").Fields, "Account", "codex@example.com")
+	assertFieldExact(t, attachmentByTitle(t, attachments, "CodexBar usage - Claude").Fields, "Account", "claude@example.com")
+	assertFieldExact(t, attachmentByTitle(t, attachments, "CodexBar usage - Gemini").Fields, "Account", "gemini-org")
 }
 
 func TestRenderUsageStdoutReadableLimitLabels(t *testing.T) {
@@ -329,6 +417,59 @@ func TestRenderSummaryOutputsGroupsUsageAndCostByProvider(t *testing.T) {
 	})
 }
 
+func TestRenderSummaryOutputsHidesUsageAccountsWhenEnabled(t *testing.T) {
+	codexUsage := []byte(`[
+	  {
+	    "provider": "codex",
+	    "source": "web",
+	    "usage": {
+	      "accountEmail": "codex@example.com",
+	      "loginMethod": "Codex Pro",
+	      "primary": {"usedPercent": 12, "windowMinutes": 300}
+	    }
+	  }
+	]`)
+	claudeUsage := []byte(`[
+	  {
+	    "provider": "claude",
+	    "source": "web",
+	    "usage": {
+	      "accountEmail": "claude@example.com",
+	      "loginMethod": "Claude Max",
+	      "primary": {"usedPercent": 34, "windowMinutes": 300}
+	    }
+	  }
+	]`)
+	cost := []byte(`[
+	  {"provider": "codex", "source": "local"},
+	  {"provider": "claude", "source": "local"}
+	]`)
+
+	attachments := renderOutputsWithOptions(modeSummary, []codexbarOutput{
+		{
+			Label:      "usage",
+			Result:     &rexec.Result{Stdout: codexUsage},
+			UsageHints: usageRenderHints{Provider: "codex", Source: "web"},
+		},
+		{
+			Label:      "usage",
+			Result:     &rexec.Result{Stdout: claudeUsage},
+			UsageHints: usageRenderHints{Provider: "claude", Source: "web"},
+		},
+		{
+			Label:  "cost",
+			Result: &rexec.Result{Stdout: cost},
+		},
+	}, renderOptions{HideAccountValues: true})
+
+	codex := attachmentByTitle(t, attachments, "CodexBar usage - Codex")
+	claude := attachmentByTitle(t, attachments, "CodexBar usage - Claude")
+	assertFieldExact(t, codex.Fields, "Account", hiddenAccountValue)
+	assertFieldExact(t, claude.Fields, "Account", hiddenAccountValue)
+	assertFieldMissingValue(t, codex.Fields, "Account", "codex@example.com")
+	assertFieldMissingValue(t, claude.Fields, "Account", "claude@example.com")
+}
+
 func TestRenderConfigStdout(t *testing.T) {
 	att := renderConfigStdout([]byte(`[]`))
 	if att.Color != colorGood {
@@ -438,6 +579,25 @@ func fieldContains(fields []*model.SlackAttachmentField, title, want string) boo
 		}
 	}
 	return false
+}
+
+func assertFieldExact(t *testing.T, fields []*model.SlackAttachmentField, title, want string) {
+	t.Helper()
+	for _, field := range fields {
+		if field.Title == title && field.Value.(string) == want {
+			return
+		}
+	}
+	t.Fatalf("missing exact field %q=%q in %s", title, want, fieldsDebugString(fields))
+}
+
+func assertFieldMissingValue(t *testing.T, fields []*model.SlackAttachmentField, title, unwanted string) {
+	t.Helper()
+	for _, field := range fields {
+		if field.Title == title && strings.Contains(field.Value.(string), unwanted) {
+			t.Fatalf("field %q unexpectedly contains %q in %s", title, unwanted, fieldsDebugString(fields))
+		}
+	}
 }
 
 func attachmentByTitle(t *testing.T, attachments []*model.SlackAttachment, title string) *model.SlackAttachment {

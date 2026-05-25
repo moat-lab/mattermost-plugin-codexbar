@@ -24,6 +24,10 @@ type renderOptions struct {
 	HideAccountValues bool
 }
 
+func defaultRenderOptions() renderOptions {
+	return renderOptions{HideAccountValues: true}
+}
+
 type tokenTotals struct {
 	InputTokens         int64   `json:"inputTokens"`
 	OutputTokens        int64   `json:"outputTokens"`
@@ -139,7 +143,7 @@ type summaryCard struct {
 }
 
 func renderOutputs(mode commandMode, outputs []codexbarOutput) []*model.SlackAttachment {
-	return renderOutputsWithOptions(mode, outputs, renderOptions{})
+	return renderOutputsWithOptions(mode, outputs, defaultRenderOptions())
 }
 
 func renderOutputsWithOptions(mode commandMode, outputs []codexbarOutput, opts renderOptions) []*model.SlackAttachment {
@@ -440,7 +444,7 @@ func renderUsageStdout(stdout []byte) []*model.SlackAttachment {
 }
 
 func renderUsageStdoutWithHints(stdout []byte, hints usageRenderHints) []*model.SlackAttachment {
-	return renderUsageStdoutWithOptions(stdout, hints, renderOptions{})
+	return renderUsageStdoutWithOptions(stdout, hints, defaultRenderOptions())
 }
 
 func renderUsageStdoutWithOptions(stdout []byte, hints usageRenderHints, opts renderOptions) []*model.SlackAttachment {
@@ -725,9 +729,6 @@ func formatWindow(w *usageWindow) string {
 		parts = append(parts, w.ResetDescription)
 	} else if w.ResetsAt != "" {
 		parts = append(parts, "resets "+formatTime(w.ResetsAt))
-	}
-	if w.WindowMinutes > 0 {
-		parts = append(parts, windowLength(w.WindowMinutes))
 	}
 	if len(parts) == 0 {
 		return "n/a"

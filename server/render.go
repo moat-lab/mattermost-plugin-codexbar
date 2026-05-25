@@ -513,10 +513,14 @@ func renderUsageReport(report usageReport, hints usageRenderHints, opts renderOp
 }
 
 func accountFieldValue(usage *providerUsage, opts renderOptions) string {
-	if opts.HideAccountValues {
+	if opts.HideAccountValues || hasAccountValue(usage) {
 		return hiddenAccountValue
 	}
-	return firstNonEmpty(usage.AccountEmail, usage.AccountOrganization, "unknown")
+	return "unknown"
+}
+
+func hasAccountValue(usage *providerUsage) bool {
+	return usage != nil && firstNonEmpty(usage.AccountEmail, usage.AccountOrganization) != ""
 }
 
 func renderConfigStdout(stdout []byte) *model.SlackAttachment {

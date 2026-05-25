@@ -145,7 +145,7 @@ func TestRenderUsageStdoutHidesAccountsWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestRenderUsageStdoutCanShowAccountsWhenExplicitlyDisabled(t *testing.T) {
+func TestRenderUsageStdoutStillRedactsAccountsWhenExplicitlyDisabled(t *testing.T) {
 	stdout := []byte(`[
 	  {
 	    "provider": "codex",
@@ -181,9 +181,12 @@ func TestRenderUsageStdoutCanShowAccountsWhenExplicitlyDisabled(t *testing.T) {
 		t.Fatalf("attachments = %d, want 3", len(attachments))
 	}
 
-	assertFieldExact(t, attachmentByTitle(t, attachments, "CodexBar usage - Codex").Fields, "Account", "codex@example.com")
-	assertFieldExact(t, attachmentByTitle(t, attachments, "CodexBar usage - Claude").Fields, "Account", "claude@example.com")
-	assertFieldExact(t, attachmentByTitle(t, attachments, "CodexBar usage - Gemini").Fields, "Account", "gemini-org")
+	for _, att := range attachments {
+		assertFieldExact(t, att.Fields, "Account", hiddenAccountValue)
+		assertFieldMissingValue(t, att.Fields, "Account", "codex@example.com")
+		assertFieldMissingValue(t, att.Fields, "Account", "claude@example.com")
+		assertFieldMissingValue(t, att.Fields, "Account", "gemini-org")
+	}
 }
 
 func TestRenderUsageStdoutReadableLimitLabels(t *testing.T) {

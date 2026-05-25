@@ -170,3 +170,39 @@ func TestIsCodexbarBotDM(t *testing.T) {
 		t.Fatal("public channel was accepted")
 	}
 }
+
+func TestLatestBotPostFromListPicksFirstBotPost(t *testing.T) {
+	postList := &model.PostList{
+		Order: []string{"human-newer", "bot-latest", "bot-older"},
+		Posts: map[string]*model.Post{
+			"human-newer": {Id: "human-newer", UserId: "human"},
+			"bot-latest":  {Id: "bot-latest", UserId: "bot"},
+			"bot-older":   {Id: "bot-older", UserId: "bot"},
+		},
+	}
+
+	got := latestBotPostFromList(postList, "bot")
+	if got == nil {
+		t.Fatal("latestBotPostFromList returned nil")
+	}
+	if got.Id != "bot-latest" {
+		t.Fatalf("latest bot post = %q, want bot-latest", got.Id)
+	}
+}
+
+func TestLoadingPostUsesNormalPostShape(t *testing.T) {
+	post := loadingPost("channel", "bot")
+	if post.ChannelId != "channel" || post.UserId != "bot" {
+		t.Fatalf("post ids = channel:%q user:%q", post.ChannelId, post.UserId)
+	}
+	if len(post.Attachments()) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(post.Attachments()))
+	}
+	attachment := post.Attachments()[0]
+	if attachment.Text != "Loading…" {
+		t.Fatalf("loading text = %q", attachment.Text)
+	}
+	if attachment.Color != colorAccent {
+		t.Fatalf("loading color = %q, want %q", attachment.Color, colorAccent)
+	}
+}

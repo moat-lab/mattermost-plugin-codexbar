@@ -24,8 +24,8 @@
                 "key": "HideAccountValues",
                 "display_name": "Hide account values",
                 "type": "bool",
-                "help_text": "When enabled, CodexBar usage cards render Account fields as *** without changing the CodexBar CLI command or output.",
-                "default": "false"
+                "help_text": "When enabled, CodexBar usage cards render Account fields as *** without changing the CodexBar CLI command or output. Enabled by default.",
+                "default": "true"
             }
         ]
     }

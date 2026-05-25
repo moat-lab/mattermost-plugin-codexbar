@@ -95,9 +95,8 @@ func TestRenderUsageStdout(t *testing.T) {
 	if !fieldContains(att.Fields, "Plan", "Claude Max") {
 		t.Fatalf("missing plan field: %#v", att.Fields)
 	}
-	if !fieldContains(att.Fields, "Account", "ccc88@cornell.edu") {
-		t.Fatalf("missing default account field: %#v", att.Fields)
-	}
+	assertFieldExact(t, att.Fields, "Account", hiddenAccountValue)
+	assertFieldMissingValue(t, att.Fields, "Account", "ccc88@cornell.edu")
 	assertNoInternalUsageLimitFieldNames(t, att)
 	assertNoInternalCommandFooter(t, att)
 }
@@ -146,7 +145,7 @@ func TestRenderUsageStdoutHidesAccountsWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestRenderUsageStdoutKeepsAccountsVisibleWhenDisabled(t *testing.T) {
+func TestRenderUsageStdoutCanShowAccountsWhenExplicitlyDisabled(t *testing.T) {
 	stdout := []byte(`[
 	  {
 	    "provider": "codex",
@@ -240,24 +239,24 @@ func TestRenderUsageStdoutReadableLimitLabels(t *testing.T) {
 	assertProviderSource(t, gemini, "Gemini", "api")
 
 	if !fieldContains(codex.Fields, "5h limit", "12% used") ||
-		!fieldContains(codex.Fields, "5h limit", "resets at noon") ||
-		!fieldContains(codex.Fields, "5h limit", "5h window") {
-		t.Fatalf("codex short window field lost value/reset/window: %s", fieldsDebugString(codex.Fields))
+		!fieldContains(codex.Fields, "5h limit", "resets at noon") {
+		t.Fatalf("codex short window field lost value/reset text: %s", fieldsDebugString(codex.Fields))
 	}
+	assertFieldMissingValue(t, codex.Fields, "5h limit", "5h window")
 	if !fieldContains(codex.Fields, "Weekly limit", "34% used") ||
-		!fieldContains(codex.Fields, "Weekly limit", "resets Sunday") ||
-		!fieldContains(codex.Fields, "Weekly limit", "1w window") {
-		t.Fatalf("codex weekly field lost value/reset/window: %s", fieldsDebugString(codex.Fields))
+		!fieldContains(codex.Fields, "Weekly limit", "resets Sunday") {
+		t.Fatalf("codex weekly field lost value/reset text: %s", fieldsDebugString(codex.Fields))
 	}
+	assertFieldMissingValue(t, codex.Fields, "Weekly limit", "1w window")
 	if !fieldContains(claude.Fields, "5h limit", "0% used") ||
 		!fieldContains(claude.Fields, "Weekly limit", "70% used") {
 		t.Fatalf("claude readable limit fields missing: %s", fieldsDebugString(claude.Fields))
 	}
 	if !fieldContains(gemini.Fields, "Daily limit", "45% used") ||
-		!fieldContains(gemini.Fields, "Daily limit", "resets tomorrow") ||
-		!fieldContains(gemini.Fields, "Daily limit", "1d window") {
-		t.Fatalf("gemini daily field lost value/reset/window: %s", fieldsDebugString(gemini.Fields))
+		!fieldContains(gemini.Fields, "Daily limit", "resets tomorrow") {
+		t.Fatalf("gemini daily field lost value/reset text: %s", fieldsDebugString(gemini.Fields))
 	}
+	assertFieldMissingValue(t, gemini.Fields, "Daily limit", "1d window")
 	if !fieldContains(gemini.Fields, "Weekly limit", "89% used") ||
 		!fieldContains(gemini.Fields, "Hourly limit", "67% used") {
 		t.Fatalf("gemini readable limit fields missing: %s", fieldsDebugString(gemini.Fields))

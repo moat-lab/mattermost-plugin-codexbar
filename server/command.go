@@ -129,7 +129,15 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 		return ephemeral(err.Error()), nil
 	}
 
+	p.clearBotMessages(args.ChannelId, botID)
+
+	loading := loadingPost(args.ChannelId, botID)
+	_ = client.Post.CreatePost(loading)
+
 	if req.Mode == modeHelp {
+		if loading.Id != "" {
+			_ = client.Post.DeletePost(loading.Id)
+		}
 		post := botPost(args.ChannelId, botID, renderHelp()...)
 		if err := client.Post.CreatePost(post); err != nil {
 			return ephemeral(fmt.Sprintf("create post failed: %v", err)), nil
@@ -150,6 +158,10 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 		})
 	}
 
+	if loading.Id != "" {
+		_ = client.Post.DeletePost(loading.Id)
+	}
+
 	attachments := renderOutputsWithOptions(req.Mode, outputs, renderOptions{
 		HideAccountValues: p.getHideAccountValues(),
 	})
@@ -159,6 +171,44 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 	}
 
 	return &model.CommandResponse{}, nil
+}
+
+func loadingPost(channelID, botID string) *model.Post {
+	post := &model.Post{
+		ChannelId: channelID,
+		UserId:    botID,
+	}
+	model.ParseSlackAttachment(post, []*model.SlackAttachment{{
+		Text:  "Loading…",
+		Color: colorAccent,
+	}})
+	return post
+}
+
+func (p *Plugin) clearBotMessages(channelID, botID string) {
+	client := p.getClient()
+	if client == nil {
+		return
+	}
+	var toDelete []string
+	const perPage = 200
+	for page := 0; ; page++ {
+		postList, err := client.Post.GetPostsForChannel(channelID, page, perPage)
+		if err != nil || postList == nil {
+			break
+		}
+		for _, postID := range postList.Order {
+			if post := postList.Posts[postID]; post != nil && post.UserId == botID {
+				toDelete = append(toDelete, post.Id)
+			}
+		}
+		if len(postList.Order) < perPage {
+			break
+		}
+	}
+	for _, id := range toDelete {
+		_ = client.Post.DeletePost(id)
+	}
 }
 
 func botPost(channelID, botID string, attachments ...*model.SlackAttachment) *model.Post {

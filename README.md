@@ -39,7 +39,7 @@ Deployment coordinates stay in the runtime environment/IaC. The Mattermost Syste
 
 | Setting | Default | Meaning |
 |---|---:|---|
-| `HideAccountValues` | `false` | When enabled, usage and summary cards render Account fields as `***` without changing CodexBar CLI execution or output. |
+| `HideAccountValues` | `true` | When enabled, usage and summary cards render Account fields as `***` without changing CodexBar CLI execution or output. Enabled by default. |
 
 ## Build And Test
 

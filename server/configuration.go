@@ -40,8 +40,12 @@ func resolveCodexbarCwd() string {
 	return strings.TrimSpace(os.Getenv(codexbarCwdEnv))
 }
 
+func defaultConfiguration() configuration {
+	return configuration{HideAccountValues: true}
+}
+
 func (p *Plugin) loadPluginConfiguration() (configuration, error) {
-	var cfg configuration
+	cfg := defaultConfiguration()
 	if err := p.API.LoadPluginConfiguration(&cfg); err != nil {
 		return configuration{}, fmt.Errorf("LoadPluginConfiguration: %w", err)
 	}

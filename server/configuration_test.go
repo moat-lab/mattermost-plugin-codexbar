@@ -46,14 +46,14 @@ func TestResolveRexecdAddr(t *testing.T) {
 	}
 }
 
-func TestConfigurationDefaultsKeepAccountValuesVisible(t *testing.T) {
-	var cfg configuration
-	if cfg.HideAccountValues {
-		t.Fatal("HideAccountValues default = true, want false")
+func TestDefaultConfigurationHidesAccountValues(t *testing.T) {
+	cfg := defaultConfiguration()
+	if !cfg.HideAccountValues {
+		t.Fatal("HideAccountValues default = false, want true")
 	}
 }
 
-func TestManifestExposesDisabledAccountHidingSetting(t *testing.T) {
+func TestManifestExposesAccountHidingSetting(t *testing.T) {
 	raw, err := os.ReadFile("../plugin.json")
 	if err != nil {
 		t.Fatalf("read plugin.json: %v", err)
@@ -79,8 +79,8 @@ func TestManifestExposesDisabledAccountHidingSetting(t *testing.T) {
 		if setting.Type != "bool" {
 			t.Fatalf("HideAccountValues type = %q, want bool", setting.Type)
 		}
-		if setting.Default != "false" {
-			t.Fatalf("HideAccountValues default = %#v, want \"false\"", setting.Default)
+		if setting.Default != "true" {
+			t.Fatalf("HideAccountValues default = %#v, want \"true\"", setting.Default)
 		}
 		return
 	}

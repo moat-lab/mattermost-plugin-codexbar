@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
 
+	rexec "github.com/Mouriya-Emma/rexec-go"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -169,4 +173,88 @@ func TestIsCodexbarBotDM(t *testing.T) {
 	if isCodexbarBotDM(public, botID) {
 		t.Fatal("public channel was accepted")
 	}
+}
+
+func TestRunCodexbarInvocationsRunsInParallelAndKeepsOrder(t *testing.T) {
+	runner := newBlockingRunner(3)
+	invocations := []codexbarInvocation{
+		{Label: "first", Argv: []string{"cmd", "first"}, Timeout: time.Second, UsageHints: usageRenderHints{Provider: "codex"}},
+		{Label: "second", Argv: []string{"cmd", "second"}, Timeout: time.Second, UsageHints: usageRenderHints{Provider: "claude"}},
+		{Label: "third", Argv: []string{"cmd", "third"}, Timeout: time.Second, UsageHints: usageRenderHints{Provider: "gemini"}},
+	}
+
+	done := make(chan []codexbarOutput, 1)
+	go func() {
+		done <- runCodexbarInvocations(runner, invocations)
+	}()
+
+	runner.waitForStarts(t, 3, 200*time.Millisecond)
+	runner.releaseAll()
+
+	var outputs []codexbarOutput
+	select {
+	case outputs = <-done:
+	case <-time.After(time.Second):
+		t.Fatal("parallel invocation runner did not return")
+	}
+
+	if len(outputs) != len(invocations) {
+		t.Fatalf("outputs = %d, want %d", len(outputs), len(invocations))
+	}
+	for i, want := range []string{"first", "second", "third"} {
+		if outputs[i].Label != want {
+			t.Fatalf("output %d label = %q, want %q", i, outputs[i].Label, want)
+		}
+		if string(outputs[i].Result.Stdout) != want {
+			t.Fatalf("output %d stdout = %q, want %q", i, outputs[i].Result.Stdout, want)
+		}
+		if outputs[i].UsageHints != invocations[i].UsageHints {
+			t.Fatalf("output %d hints = %#v, want %#v", i, outputs[i].UsageHints, invocations[i].UsageHints)
+		}
+	}
+}
+
+type blockingRunner struct {
+	wantStarts int
+	started    chan struct{}
+	release    chan struct{}
+	once       sync.Once
+}
+
+func newBlockingRunner(wantStarts int) *blockingRunner {
+	return &blockingRunner{
+		wantStarts: wantStarts,
+		started:    make(chan struct{}, wantStarts),
+		release:    make(chan struct{}),
+	}
+}
+
+func (r *blockingRunner) Run(ctx context.Context, argv []string, _ ...rexec.RunOption) (*rexec.Result, error) {
+	select {
+	case r.started <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case <-r.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return &rexec.Result{Stdout: []byte(argv[1])}, nil
+}
+
+func (r *blockingRunner) waitForStarts(t *testing.T, n int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for i := 0; i < n; i++ {
+		select {
+		case <-r.started:
+		case <-deadline:
+			t.Fatalf("only %d/%d invocations started before timeout; runner is not parallel", i, n)
+		}
+	}
+}
+
+func (r *blockingRunner) releaseAll() {
+	r.once.Do(func() { close(r.release) })
 }

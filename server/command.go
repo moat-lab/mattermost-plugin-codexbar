@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	rexec "github.com/Mouriya-Emma/rexec-go"
@@ -66,6 +67,10 @@ type codexbarOutput struct {
 	Result     *rexec.Result
 	Err        error
 	UsageHints usageRenderHints
+}
+
+type codexbarRunner interface {
+	Run(ctx context.Context, argv []string, opts ...rexec.RunOption) (*rexec.Result, error)
 }
 
 type usageRenderHints struct {
@@ -145,18 +150,7 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 		return &model.CommandResponse{}, nil
 	}
 
-	outputs := make([]codexbarOutput, 0, len(req.Invocations))
-	for _, inv := range req.Invocations {
-		ctx, cancel := context.WithTimeout(context.Background(), inv.Timeout)
-		res, runErr := rc.Run(ctx, inv.Argv, rexec.WithTimeout(inv.Timeout), rexec.WithCwd(inv.Cwd))
-		cancel()
-		outputs = append(outputs, codexbarOutput{
-			Label:      inv.Label,
-			Result:     res,
-			Err:        runErr,
-			UsageHints: inv.UsageHints,
-		})
-	}
+	outputs := runCodexbarInvocations(rc, req.Invocations)
 
 	if loading.Id != "" {
 		_ = client.Post.DeletePost(loading.Id)
@@ -171,6 +165,29 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 	}
 
 	return &model.CommandResponse{}, nil
+}
+
+func runCodexbarInvocations(runner codexbarRunner, invocations []codexbarInvocation) []codexbarOutput {
+	outputs := make([]codexbarOutput, len(invocations))
+	var wg sync.WaitGroup
+	for i, inv := range invocations {
+		i, inv := i, inv
+		outputs[i] = codexbarOutput{
+			Label:      inv.Label,
+			UsageHints: inv.UsageHints,
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), inv.Timeout)
+			defer cancel()
+			res, runErr := runner.Run(ctx, inv.Argv, rexec.WithTimeout(inv.Timeout), rexec.WithCwd(inv.Cwd))
+			outputs[i].Result = res
+			outputs[i].Err = runErr
+		}()
+	}
+	wg.Wait()
+	return outputs
 }
 
 func loadingPost(channelID, botID string) *model.Post {

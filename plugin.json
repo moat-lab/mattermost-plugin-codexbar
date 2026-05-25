@@ -5,7 +5,7 @@
     "homepage_url": "https://github.com/moat-lab/mattermost-plugin-codexbar",
     "support_url": "https://github.com/moat-lab/mattermost-plugin-codexbar/issues",
     "icon_path": "",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "min_server_version": "9.11.0",
     "server": {
         "executables": {

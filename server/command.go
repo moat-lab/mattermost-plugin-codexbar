@@ -12,6 +12,7 @@ import (
 	rexec "github.com/Mouriya-Emma/rexec-go"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
 const (
@@ -30,8 +31,6 @@ var (
 		"gemini": true,
 	}
 	allowedUsageSources = map[string]bool{
-		"auto":  true,
-		"web":   true,
 		"cli":   true,
 		"oauth": true,
 		"api":   true,
@@ -92,7 +91,7 @@ func buildAutocompleteTree() *model.AutocompleteData {
 	usage.AddStaticListArgument("Provider", false, providerAutocompleteItems())
 	usage.AddNamedStaticListArgument("provider", "Provider", false, providerAutocompleteItems())
 	usage.AddNamedStaticListArgument("source", "CodexBar source", false, []model.AutocompleteListItem{
-		{Item: "auto"}, {Item: "web"}, {Item: "cli"}, {Item: "oauth"}, {Item: "api"},
+		{Item: "cli"}, {Item: "oauth"}, {Item: "api"},
 	})
 	root.AddCommand(usage)
 
@@ -134,8 +133,6 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 		return ephemeral(err.Error()), nil
 	}
 
-	p.clearBotMessages(args.ChannelId, botID)
-
 	loading := loadingPost(args.ChannelId, botID)
 	_ = client.Post.CreatePost(loading)
 
@@ -150,21 +147,34 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 		return &model.CommandResponse{}, nil
 	}
 
-	outputs := runCodexbarInvocations(rc, req.Invocations)
-
-	if loading.Id != "" {
-		_ = client.Post.DeletePost(loading.Id)
-	}
-
-	attachments := renderOutputsWithOptions(req.Mode, outputs, renderOptions{
-		HideAccountValues: p.getHideAccountValues(),
+	// CodexBar provider probes can take longer than Mattermost allows a slash
+	// command handler to block. Return immediately after posting Loading… and
+	// publish the final bot card from a background worker.
+	hideAccountValues := p.getHideAccountValues()
+	channelID := args.ChannelId
+	go p.finishCodexbarCommand(client, rc, channelID, botID, loading.Id, req, renderOptions{
+		HideAccountValues: hideAccountValues,
 	})
-	post := botPost(args.ChannelId, botID, attachments...)
-	if err := client.Post.CreatePost(post); err != nil {
-		return ephemeral(fmt.Sprintf("create post failed: %v", err)), nil
-	}
 
 	return &model.CommandResponse{}, nil
+}
+
+func (p *Plugin) finishCodexbarCommand(client *pluginapi.Client, rc codexbarRunner, channelID, botID, loadingPostID string, req codexbarRequest, opts renderOptions) {
+	outputs := runCodexbarInvocations(rc, req.Invocations)
+
+	if loadingPostID != "" {
+		_ = client.Post.DeletePost(loadingPostID)
+	}
+
+	attachments := renderOutputsWithOptions(req.Mode, outputs, opts)
+	post := botPost(channelID, botID, attachments...)
+	if err := client.Post.CreatePost(post); err != nil {
+		client.Log.Error("create codexbar result post failed", "err", err)
+	}
+
+	go p.clearBotMessagesExcept(channelID, botID, post.Id)
+
+	return
 }
 
 func runCodexbarInvocations(runner codexbarRunner, invocations []codexbarInvocation) []codexbarOutput {
@@ -203,6 +213,10 @@ func loadingPost(channelID, botID string) *model.Post {
 }
 
 func (p *Plugin) clearBotMessages(channelID, botID string) {
+	p.clearBotMessagesExcept(channelID, botID, "")
+}
+
+func (p *Plugin) clearBotMessagesExcept(channelID, botID, keepPostID string) {
 	client := p.getClient()
 	if client == nil {
 		return
@@ -215,6 +229,9 @@ func (p *Plugin) clearBotMessages(channelID, botID string) {
 			break
 		}
 		for _, postID := range postList.Order {
+			if postID == keepPostID {
+				continue
+			}
 			if post := postList.Posts[postID]; post != nil && post.UserId == botID {
 				toDelete = append(toDelete, post.Id)
 			}
@@ -368,8 +385,9 @@ func buildCostArgv(bin string, args []string) ([]string, error) {
 }
 
 type usageOptions struct {
-	provider string
-	source   string
+	provider       string
+	source         string
+	sourceExplicit bool
 }
 
 func buildUsageInvocations(bin, cwd string, args []string) ([]codexbarInvocation, error) {
@@ -377,7 +395,7 @@ func buildUsageInvocations(bin, cwd string, args []string) ([]codexbarInvocation
 	if err != nil {
 		return nil, err
 	}
-	if opts.provider == "all" && opts.source == "" {
+	if opts.provider == "all" && !opts.sourceExplicit {
 		return allUsageInvocations(bin, cwd), nil
 	}
 	return []codexbarInvocation{{
@@ -391,16 +409,16 @@ func buildUsageInvocations(bin, cwd string, args []string) ([]codexbarInvocation
 
 func summaryUsageInvocations(bin, cwd string) []codexbarInvocation {
 	return usageInvocationsFor(bin, cwd, []usageProviderSource{
-		{provider: "codex", source: "web"},
-		{provider: "claude", source: "web"},
+		{provider: "codex", source: defaultUsageSource("codex")},
+		{provider: "claude", source: defaultUsageSource("claude")},
 	})
 }
 
 func allUsageInvocations(bin, cwd string) []codexbarInvocation {
 	return usageInvocationsFor(bin, cwd, []usageProviderSource{
-		{provider: "codex", source: "web"},
-		{provider: "claude", source: "web"},
-		{provider: "gemini", source: "api"},
+		{provider: "codex", source: defaultUsageSource("codex")},
+		{provider: "claude", source: defaultUsageSource("claude")},
+		{provider: "gemini", source: defaultUsageSource("gemini")},
 	})
 }
 
@@ -426,6 +444,7 @@ func usageInvocationsFor(bin, cwd string, specs []usageProviderSource) []codexba
 func parseUsageOptions(args []string) (usageOptions, error) {
 	provider := "all"
 	source := ""
+	sourceExplicit := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
@@ -447,20 +466,22 @@ func parseUsageOptions(args []string) (usageOptions, error) {
 			provider = value
 		case arg == "--source":
 			if i+1 >= len(args) {
-				return usageOptions{}, errors.New("--source requires auto|web|cli|oauth|api")
+				return usageOptions{}, errors.New("--source requires cli|oauth|api")
 			}
 			i++
 			value := args[i]
 			if !allowedUsageSources[value] {
-				return usageOptions{}, fmt.Errorf("unsupported usage source %q; use auto|web|cli|oauth|api", value)
+				return usageOptions{}, fmt.Errorf("unsupported usage source %q; use cli|oauth|api", value)
 			}
 			source = value
+			sourceExplicit = true
 		case strings.HasPrefix(arg, "--source="):
 			value := strings.TrimPrefix(arg, "--source=")
 			if !allowedUsageSources[value] {
-				return usageOptions{}, fmt.Errorf("unsupported usage source %q; use auto|web|cli|oauth|api", value)
+				return usageOptions{}, fmt.Errorf("unsupported usage source %q; use cli|oauth|api", value)
 			}
 			source = value
+			sourceExplicit = true
 		case safeTokenPattern.MatchString(arg):
 			if err := validateProvider(arg); err != nil {
 				return usageOptions{}, err
@@ -470,7 +491,23 @@ func parseUsageOptions(args []string) (usageOptions, error) {
 			return usageOptions{}, fmt.Errorf("unsupported usage argument %q; use provider codex|claude|gemini|all and optional --source=<source>", arg)
 		}
 	}
-	return usageOptions{provider: provider, source: source}, nil
+	if source == "" {
+		source = defaultUsageSource(provider)
+	}
+	return usageOptions{provider: provider, source: source, sourceExplicit: sourceExplicit}, nil
+}
+
+func defaultUsageSource(provider string) string {
+	switch provider {
+	case "codex":
+		return "oauth"
+	case "claude":
+		return "web"
+	case "gemini":
+		return "api"
+	default:
+		return "cli"
+	}
 }
 
 func buildUsageArgv(bin, provider, source string) []string {

@@ -22,7 +22,7 @@ func TestBuildCodexbarRequestSummary(t *testing.T) {
 	if len(req.Invocations) != 3 {
 		t.Fatalf("invocations = %d, want 3", len(req.Invocations))
 	}
-	wantUsage := []string{"/opt/homebrew/bin/codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "web", "--web-timeout", usageWebTimeoutSeconds}
+	wantUsage := []string{"/opt/homebrew/bin/codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "oauth"}
 	if !reflect.DeepEqual(req.Invocations[0].Argv, wantUsage) {
 		t.Fatalf("usage argv = %#v, want %#v", req.Invocations[0].Argv, wantUsage)
 	}
@@ -75,8 +75,26 @@ func TestBuildCodexbarRequestUsageProviderHint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildCodexbarRequest: %v", err)
 	}
-	if req.Invocations[0].UsageHints != (usageRenderHints{Provider: "gemini"}) {
+	if req.Invocations[0].UsageHints != (usageRenderHints{Provider: "gemini", Source: "api"}) {
 		t.Fatalf("usage hints = %#v", req.Invocations[0].UsageHints)
+	}
+}
+
+func TestBuildCodexbarRequestDefaultsSingleProviderToNonWebSource(t *testing.T) {
+	req, err := buildCodexbarRequest("/codexbar usage codex", "codexbar", "")
+	if err != nil {
+		t.Fatalf("buildCodexbarRequest: %v", err)
+	}
+	want := []string{"codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "oauth"}
+	if !reflect.DeepEqual(req.Invocations[0].Argv, want) {
+		t.Fatalf("argv = %#v, want %#v", req.Invocations[0].Argv, want)
+	}
+}
+
+func TestBuildCodexbarRequestRejectsWebSource(t *testing.T) {
+	_, err := buildCodexbarRequest("/codexbar usage codex --source web", "codexbar", "")
+	if err == nil {
+		t.Fatal("expected web source to be rejected")
 	}
 }
 
@@ -89,7 +107,7 @@ func TestBuildCodexbarRequestUsageAllSplitsProviders(t *testing.T) {
 		t.Fatalf("invocations = %d, want 3", len(req.Invocations))
 	}
 	want := [][]string{
-		{"codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "web", "--web-timeout", usageWebTimeoutSeconds},
+		{"codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "oauth"},
 		{"codexbar", "usage", "--format", "json", "--status", "--provider", "claude", "--source", "web", "--web-timeout", usageWebTimeoutSeconds},
 		{"codexbar", "usage", "--format", "json", "--status", "--provider", "gemini", "--source", "api"},
 	}
@@ -180,7 +198,7 @@ func TestRunCodexbarInvocationsRunsInParallelAndKeepsOrder(t *testing.T) {
 	invocations := []codexbarInvocation{
 		{Label: "first", Argv: []string{"cmd", "first"}, Timeout: time.Second, UsageHints: usageRenderHints{Provider: "codex"}},
 		{Label: "second", Argv: []string{"cmd", "second"}, Timeout: time.Second, UsageHints: usageRenderHints{Provider: "claude"}},
-		{Label: "third", Argv: []string{"cmd", "third"}, Timeout: time.Second, UsageHints: usageRenderHints{Provider: "gemini"}},
+		{Label: "third", Argv: []string{"cmd", "third"}, Timeout: time.Second, UsageHints: usageRenderHints{Provider: "gemini", Source: "api"}},
 	}
 
 	done := make(chan []codexbarOutput, 1)

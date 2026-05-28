@@ -11,7 +11,8 @@ const (
 	rexecdAddrEnv      = "CODEXBAR_REXECD_ADDR"
 	codexbarBinEnv     = "CODEXBAR_BIN"
 	codexbarCwdEnv     = "CODEXBAR_CWD"
-	defaultCodexbarBin = "codexbar"
+	defaultCodexbarBin = "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"
+	defaultCodexbarCwd = "/Applications/CodexBar.app/Contents/Helpers"
 )
 
 // configuration mirrors plugin.json's settings_schema. Field names must match
@@ -37,7 +38,11 @@ func resolveCodexbarBin() string {
 }
 
 func resolveCodexbarCwd() string {
-	return strings.TrimSpace(os.Getenv(codexbarCwdEnv))
+	raw := strings.TrimSpace(os.Getenv(codexbarCwdEnv))
+	if raw == "" {
+		return defaultCodexbarCwd
+	}
+	return raw
 }
 
 func defaultConfiguration() configuration {

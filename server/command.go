@@ -129,18 +129,17 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 		return ephemeral(err.Error()), nil
 	}
 
-	p.clearBotMessages(args.ChannelId, botID)
+	p.commandMu.Lock()
+	defer p.commandMu.Unlock()
 
-	loading := loadingPost(args.ChannelId, botID)
-	_ = client.Post.CreatePost(loading)
+	commandPost, err := p.upsertBotPost(args.ChannelId, botID, loadingAttachment())
+	if err != nil {
+		return ephemeral(fmt.Sprintf("create loading post failed: %v", err)), nil
+	}
 
 	if req.Mode == modeHelp {
-		if loading.Id != "" {
-			_ = client.Post.DeletePost(loading.Id)
-		}
-		post := botPost(args.ChannelId, botID, renderHelp()...)
-		if err := client.Post.CreatePost(post); err != nil {
-			return ephemeral(fmt.Sprintf("create post failed: %v", err)), nil
+		if err := p.replaceBotPost(commandPost, renderHelp()...); err != nil {
+			return ephemeral(fmt.Sprintf("update post failed: %v", err)), nil
 		}
 		return &model.CommandResponse{}, nil
 	}
@@ -158,57 +157,91 @@ func (p *Plugin) ExecuteCommand(_ *plugin.Context, args *model.CommandArgs) (*mo
 		})
 	}
 
-	if loading.Id != "" {
-		_ = client.Post.DeletePost(loading.Id)
-	}
-
 	attachments := renderOutputsWithOptions(req.Mode, outputs, renderOptions{
 		HideAccountValues: p.getHideAccountValues(),
 	})
-	post := botPost(args.ChannelId, botID, attachments...)
-	if err := client.Post.CreatePost(post); err != nil {
-		return ephemeral(fmt.Sprintf("create post failed: %v", err)), nil
+	if err := p.replaceBotPost(commandPost, attachments...); err != nil {
+		return ephemeral(fmt.Sprintf("update post failed: %v", err)), nil
 	}
 
 	return &model.CommandResponse{}, nil
 }
 
-func loadingPost(channelID, botID string) *model.Post {
-	post := &model.Post{
-		ChannelId: channelID,
-		UserId:    botID,
-	}
-	model.ParseSlackAttachment(post, []*model.SlackAttachment{{
+func loadingAttachment() *model.SlackAttachment {
+	return &model.SlackAttachment{
 		Text:  "Loading…",
 		Color: colorAccent,
-	}})
-	return post
+	}
 }
 
-func (p *Plugin) clearBotMessages(channelID, botID string) {
+func loadingPost(channelID, botID string) *model.Post {
+	return botPost(channelID, botID, loadingAttachment())
+}
+
+func (p *Plugin) upsertBotPost(channelID, botID string, attachment *model.SlackAttachment) (*model.Post, error) {
 	client := p.getClient()
 	if client == nil {
-		return
+		return nil, errors.New("plugin API client is unavailable")
 	}
-	var toDelete []string
+	if latest, err := p.latestBotPost(channelID, botID); err == nil && latest != nil {
+		post := botPost(channelID, botID, attachment)
+		post.Id = latest.Id
+		if err := client.Post.UpdatePost(post); err != nil {
+			return nil, err
+		}
+		return post, nil
+	}
+
+	post := botPost(channelID, botID, attachment)
+	if err := client.Post.CreatePost(post); err != nil {
+		return nil, err
+	}
+	return post, nil
+}
+
+func (p *Plugin) replaceBotPost(post *model.Post, attachments ...*model.SlackAttachment) error {
+	client := p.getClient()
+	if client == nil {
+		return errors.New("plugin API client is unavailable")
+	}
+	replacement := botPost(post.ChannelId, post.UserId, attachments...)
+	replacement.Id = post.Id
+	if err := client.Post.UpdatePost(replacement); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Plugin) latestBotPost(channelID, botID string) (*model.Post, error) {
+	client := p.getClient()
+	if client == nil {
+		return nil, errors.New("plugin API client is unavailable")
+	}
 	const perPage = 200
 	for page := 0; ; page++ {
 		postList, err := client.Post.GetPostsForChannel(channelID, page, perPage)
-		if err != nil || postList == nil {
-			break
+		if err != nil {
+			return nil, err
 		}
-		for _, postID := range postList.Order {
-			if post := postList.Posts[postID]; post != nil && post.UserId == botID {
-				toDelete = append(toDelete, post.Id)
-			}
+		if post := latestBotPostFromList(postList, botID); post != nil {
+			return post, nil
 		}
-		if len(postList.Order) < perPage {
-			break
+		if postList == nil || len(postList.Order) < perPage {
+			return nil, nil
 		}
 	}
-	for _, id := range toDelete {
-		_ = client.Post.DeletePost(id)
+}
+
+func latestBotPostFromList(postList *model.PostList, botID string) *model.Post {
+	if postList == nil {
+		return nil
 	}
+	for _, postID := range postList.Order {
+		if post := postList.Posts[postID]; post != nil && post.UserId == botID {
+			return post
+		}
+	}
+	return nil
 }
 
 func botPost(channelID, botID string, attachments ...*model.SlackAttachment) *model.Post {

@@ -24,6 +24,7 @@ type Plugin struct {
 	plugin.MattermostPlugin
 
 	mu          sync.RWMutex
+	commandMu   sync.Mutex
 	client      *pluginapi.Client
 	rexec       *rexec.Client
 	rexecAddr   string

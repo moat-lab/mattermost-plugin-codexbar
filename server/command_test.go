@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
 
+	rexec "github.com/Mouriya-Emma/rexec-go"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -18,7 +22,7 @@ func TestBuildCodexbarRequestSummary(t *testing.T) {
 	if len(req.Invocations) != 3 {
 		t.Fatalf("invocations = %d, want 3", len(req.Invocations))
 	}
-	wantUsage := []string{"/opt/homebrew/bin/codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "web", "--web-timeout", usageWebTimeoutSeconds}
+	wantUsage := []string{"/opt/homebrew/bin/codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "oauth"}
 	if !reflect.DeepEqual(req.Invocations[0].Argv, wantUsage) {
 		t.Fatalf("usage argv = %#v, want %#v", req.Invocations[0].Argv, wantUsage)
 	}
@@ -71,8 +75,26 @@ func TestBuildCodexbarRequestUsageProviderHint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildCodexbarRequest: %v", err)
 	}
-	if req.Invocations[0].UsageHints != (usageRenderHints{Provider: "gemini"}) {
+	if req.Invocations[0].UsageHints != (usageRenderHints{Provider: "gemini", Source: "api"}) {
 		t.Fatalf("usage hints = %#v", req.Invocations[0].UsageHints)
+	}
+}
+
+func TestBuildCodexbarRequestDefaultsSingleProviderToNonWebSource(t *testing.T) {
+	req, err := buildCodexbarRequest("/codexbar usage codex", "codexbar", "")
+	if err != nil {
+		t.Fatalf("buildCodexbarRequest: %v", err)
+	}
+	want := []string{"codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "oauth"}
+	if !reflect.DeepEqual(req.Invocations[0].Argv, want) {
+		t.Fatalf("argv = %#v, want %#v", req.Invocations[0].Argv, want)
+	}
+}
+
+func TestBuildCodexbarRequestRejectsWebSource(t *testing.T) {
+	_, err := buildCodexbarRequest("/codexbar usage codex --source web", "codexbar", "")
+	if err == nil {
+		t.Fatal("expected web source to be rejected")
 	}
 }
 
@@ -85,7 +107,7 @@ func TestBuildCodexbarRequestUsageAllSplitsProviders(t *testing.T) {
 		t.Fatalf("invocations = %d, want 3", len(req.Invocations))
 	}
 	want := [][]string{
-		{"codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "web", "--web-timeout", usageWebTimeoutSeconds},
+		{"codexbar", "usage", "--format", "json", "--status", "--provider", "codex", "--source", "oauth"},
 		{"codexbar", "usage", "--format", "json", "--status", "--provider", "claude", "--source", "web", "--web-timeout", usageWebTimeoutSeconds},
 		{"codexbar", "usage", "--format", "json", "--status", "--provider", "gemini", "--source", "api"},
 	}
@@ -169,4 +191,88 @@ func TestIsCodexbarBotDM(t *testing.T) {
 	if isCodexbarBotDM(public, botID) {
 		t.Fatal("public channel was accepted")
 	}
+}
+
+func TestRunCodexbarInvocationsRunsInParallelAndKeepsOrder(t *testing.T) {
+	runner := newBlockingRunner(3)
+	invocations := []codexbarInvocation{
+		{Label: "first", Argv: []string{"cmd", "first"}, Timeout: time.Second, UsageHints: usageRenderHints{Provider: "codex"}},
+		{Label: "second", Argv: []string{"cmd", "second"}, Timeout: time.Second, UsageHints: usageRenderHints{Provider: "claude"}},
+		{Label: "third", Argv: []string{"cmd", "third"}, Timeout: time.Second, UsageHints: usageRenderHints{Provider: "gemini", Source: "api"}},
+	}
+
+	done := make(chan []codexbarOutput, 1)
+	go func() {
+		done <- runCodexbarInvocations(runner, invocations)
+	}()
+
+	runner.waitForStarts(t, 3, 200*time.Millisecond)
+	runner.releaseAll()
+
+	var outputs []codexbarOutput
+	select {
+	case outputs = <-done:
+	case <-time.After(time.Second):
+		t.Fatal("parallel invocation runner did not return")
+	}
+
+	if len(outputs) != len(invocations) {
+		t.Fatalf("outputs = %d, want %d", len(outputs), len(invocations))
+	}
+	for i, want := range []string{"first", "second", "third"} {
+		if outputs[i].Label != want {
+			t.Fatalf("output %d label = %q, want %q", i, outputs[i].Label, want)
+		}
+		if string(outputs[i].Result.Stdout) != want {
+			t.Fatalf("output %d stdout = %q, want %q", i, outputs[i].Result.Stdout, want)
+		}
+		if outputs[i].UsageHints != invocations[i].UsageHints {
+			t.Fatalf("output %d hints = %#v, want %#v", i, outputs[i].UsageHints, invocations[i].UsageHints)
+		}
+	}
+}
+
+type blockingRunner struct {
+	wantStarts int
+	started    chan struct{}
+	release    chan struct{}
+	once       sync.Once
+}
+
+func newBlockingRunner(wantStarts int) *blockingRunner {
+	return &blockingRunner{
+		wantStarts: wantStarts,
+		started:    make(chan struct{}, wantStarts),
+		release:    make(chan struct{}),
+	}
+}
+
+func (r *blockingRunner) Run(ctx context.Context, argv []string, _ ...rexec.RunOption) (*rexec.Result, error) {
+	select {
+	case r.started <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case <-r.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return &rexec.Result{Stdout: []byte(argv[1])}, nil
+}
+
+func (r *blockingRunner) waitForStarts(t *testing.T, n int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for i := 0; i < n; i++ {
+		select {
+		case <-r.started:
+		case <-deadline:
+			t.Fatalf("only %d/%d invocations started before timeout; runner is not parallel", i, n)
+		}
+	}
+}
+
+func (r *blockingRunner) releaseAll() {
+	r.once.Do(func() { close(r.release) })
 }

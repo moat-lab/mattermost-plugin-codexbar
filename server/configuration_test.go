@@ -20,8 +20,8 @@ func TestResolveCodexbarBin(t *testing.T) {
 
 func TestResolveCodexbarCwd(t *testing.T) {
 	t.Setenv(codexbarCwdEnv, "")
-	if got := resolveCodexbarCwd(); got != "" {
-		t.Fatalf("resolveCodexbarCwd default = %q, want empty", got)
+	if got := resolveCodexbarCwd(); got != defaultCodexbarCwd {
+		t.Fatalf("resolveCodexbarCwd default = %q, want %q", got, defaultCodexbarCwd)
 	}
 
 	t.Setenv(codexbarCwdEnv, " /Applications/CodexBar.app/Contents/Helpers \n")
